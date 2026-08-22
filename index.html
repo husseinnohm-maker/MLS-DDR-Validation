@@ -555,6 +555,12 @@
 
                 let maxLen = Math.max(sList.length, tList.length);
                 
+                // Calculate total pallets for the order to handle distributed/duplicate pallets correctly
+                let sumSubPallets = sList.reduce((sum, r) => sum + (parseFloat(r[cSub.pallet]) || 0), 0);
+                let sumTmsPallets = tList.reduce((sum, r) => sum + (parseFloat(r[cTms.pallet]) || 0), 0);
+                // Allow a tiny margin for float precision errors
+                let isPalletSumMatch = Math.abs(sumSubPallets - sumTmsPallets) < 0.0001;
+                
                 for (let i = 0; i < maxLen; i++) {
                     let sRow = sList[i];
                     let tRow = tList[i];
@@ -574,9 +580,11 @@
                         let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], tRow[cTms.invoice], 'string', sourceName);
                         if (invErr) errors.push(createErrorObj(sourceName, invErr, sRow, tRow, order));
                         
-                        // 3. Pallet Count Check
-                        let palErr = checkMismatch('Pallets', sRow[cSub.pallet], tRow[cTms.pallet], 'number', sourceName);
-                        if (palErr) errors.push(createErrorObj(sourceName, palErr, sRow, tRow, order));
+                        // 3. Pallet Count Check (Sum-based override for duplicate orders)
+                        if (!isPalletSumMatch) {
+                            let palErr = checkMismatch('Pallets', sRow[cSub.pallet], tRow[cTms.pallet], 'number', sourceName);
+                            if (palErr) errors.push(createErrorObj(sourceName, palErr, sRow, tRow, order));
+                        }
                         
                         // 4. Invoice Status Check (With OMS Mapping Logic)
                         if (cSub.invStatus) {
