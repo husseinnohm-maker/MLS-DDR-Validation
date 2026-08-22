@@ -538,17 +538,17 @@
             let errors = [];
             let cSub = AppState.cols[sourceName.toLowerCase()];
             let cTms = AppState.cols.tms;
-            
-            // Group by strict Order Number Column
-            let subGroups = groupBy(subData, row => row[cSub.order]);
-            let tmsGroups = groupBy(tmsData, row => row[cTms.order]);
+
+            // FIX: Normalize the Order Number to handle Excel spaces or Number vs String formatting
+            let subGroups = groupBy(subData, row => normStr(row[cSub.order]));
+            let tmsGroups = groupBy(tmsData, row => normStr(row[cTms.order]));
 
             // Phase 1: Check orders present in Subsidiary
-            for (let order in subGroups) {
-                if (!order) continue;
-                
-                let sList = subGroups[order];
-                let tList = tmsGroups[order] || [];
+            for (let orderKey in subGroups) {
+                if (!orderKey) continue;
+
+                let sList = subGroups[orderKey];
+                let tList = tmsGroups[orderKey] || [];
 
                 sList.sort((a, b) => multiSort(a, b, cSub));
                 tList.sort((a, b) => multiSort(a, b, cTms));
@@ -566,26 +566,26 @@
                     let tRow = tList[i];
 
                     if (sRow && !tRow) {
-                        errors.push(createErrorObj(sourceName, `Missing in TMS (Extra count in ${sourceName})`, sRow, null, order));
+                        errors.push(createErrorObj(sourceName, `Missing in TMS (Extra count in ${sourceName})`, sRow, null, orderKey));
                     } else if (!sRow && tRow) {
-                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in TMS)`, null, tRow, order));
+                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in TMS)`, null, tRow, orderKey));
                     } else if (sRow && tRow) {
                         // Both exist, validate all relevant fields comprehensively
                         
                         // 1. Plan Date Check (Skipped for OMS per requirements)
                         if (sourceName !== 'OMS') {
                             let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], tRow[cTms.planDate], 'date', sourceName);
-                            if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, tRow, order));
+                            if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, tRow, orderKey));
                         }
                         
                         // 2. Invoice Number Check
                         let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], tRow[cTms.invoice], 'string', sourceName);
-                        if (invErr) errors.push(createErrorObj(sourceName, invErr, sRow, tRow, order));
+                        if (invErr) errors.push(createErrorObj(sourceName, invErr, sRow, tRow, orderKey));
                         
                         // 3. Pallet Count Check (Sum-based override for duplicate orders)
                         if (!isPalletSumMatch) {
                             let palErr = checkMismatch('Pallets', sRow[cSub.pallet], tRow[cTms.pallet], 'number', sourceName);
-                            if (palErr) errors.push(createErrorObj(sourceName, palErr, sRow, tRow, order));
+                            if (palErr) errors.push(createErrorObj(sourceName, palErr, sRow, tRow, orderKey));
                         }
                         
                         // 4. Invoice Status Check (With OMS Mapping Logic)
@@ -608,7 +608,7 @@
                                 let dispOrig = (sInvOriginal === null || sInvOriginal === undefined || sInvOriginal === '') ? 'Empty' : sInvOriginal;
                                 invStErr = invStErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
                             }
-                            if (invStErr) errors.push(createErrorObj(sourceName, invStErr, sRow, tRow, order));
+                            if (invStErr) errors.push(createErrorObj(sourceName, invStErr, sRow, tRow, orderKey));
                         }
                         
                         // 5. POD Status Check (With OMS Mapping Logic)
@@ -632,39 +632,29 @@
                                 let dispOrig = (sPodOriginal === null || sPodOriginal === undefined || sPodOriginal === '') ? 'Empty' : sPodOriginal;
                                 podErr = podErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
                             }
-                            if (podErr) errors.push(createErrorObj(sourceName, podErr, sRow, tRow, order));
+                            if (podErr) errors.push(createErrorObj(sourceName, podErr, sRow, tRow, orderKey));
                         }
 
                         // 6. Overall Status Check (OMS Only)
                         if (sourceName === 'OMS' && cSub.status) {
                             let stErr = checkMismatch('Status', sRow[cSub.status], tRow[cTms.status], 'string', sourceName);
-                            if (stErr) errors.push(createErrorObj(sourceName, stErr, sRow, tRow, order));
+                            if (stErr) errors.push(createErrorObj(sourceName, stErr, sRow, tRow, orderKey));
                         }
                     }
                 }
             }
 
             // Phase 2: Check orders present in TMS but entirely missing in Subsidiary scope
-            for (let order in tmsGroups) {
-                if (subGroups[order]) continue; // Handled in Phase 1
+            for (let orderKey in tmsGroups) {
+                if (subGroups[orderKey]) continue; // Handled in Phase 1
 
-                let tList = tmsGroups[order];
+                let tList = tmsGroups[orderKey];
                 for (let i = 0; i < tList.length; i++) {
                     let tRow = tList[i];
-                    let tSubDivCol = cTms.subdiv;
-                    let tSubDiv = tSubDivCol ? normStr(tRow[tSubDivCol]) : '';
                     
-                    let belongsToScope = false;
-
-                    if (sourceName === 'Oracle') {
-                        belongsToScope = true; // Oracle covers all divisions
-                    } else if (sourceName === 'OMS') {
-                        if (!tSubDiv.includes('innovativehokair') && !tSubDiv.includes('mars3pl')) belongsToScope = true;
-                    }
-
-                    if (belongsToScope) {
-                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Found in TMS)`, null, tRow, order));
-                    }
+                    // FIX: Removed strict subdivision filtering. If an order is in TMS but missing from the 
+                    // uploaded Oracle/OMS file, it MUST be captured regardless of the subdivision column data.
+                    errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Found in TMS)`, null, tRow, orderKey));
                 }
             }
 
@@ -681,7 +671,8 @@
             let errorMeta = {
                 errReason: reason,
                 source: source,
-                orderNo: orderNo,
+                // FIX: Pull the original raw order number to retain Excel's original display formatting
+                orderNo: isSubRow ? refRow[cSub.order] : refRow[cTms.order],
                 subStatus: sRow && cSub.status ? sRow[cSub.status] : 'N/A',
                 tmsStatus: tRow ? tRow[cTms.status] : 'N/A',
                 planDate: isSubRow ? refRow[cSub.planDate] : refRow[cTms.planDate],
@@ -1043,41 +1034,37 @@
 
                     // Count in Subsidiary
                     subData.forEach(row => {
-                        let orderNo = row[subCols.order];
-                        if (!orderNo) return;
-                        if (!orderMap[orderNo]) {
-                            orderMap[orderNo] = {
+                        let rawOrder = row[subCols.order];
+                        let orderKey = normStr(rawOrder);
+                        if (!orderKey) return;
+                        if (!orderMap[orderKey]) {
+                            orderMap[orderKey] = {
                                 warehouse: subWhCol ? row[subWhCol] : '',
-                                order: orderNo,
+                                order: rawOrder,
                                 invoice: row[subCols.invoice] || '',
                                 subCount: 0,
                                 tmsCount: 0
                             };
                         }
-                        orderMap[orderNo].subCount++;
+                        orderMap[orderKey].subCount++;
                     });
 
                     // Count in TMS
                     tmsData.forEach(row => {
-                        let orderNo = row[tmsCols.order];
-                        if (!orderNo) return;
+                        let rawOrder = row[tmsCols.order];
+                        let orderKey = normStr(rawOrder);
+                        if (!orderKey) return;
                         
-                        // Apply TMS subdivision filter strictly for OMS
-                        if (subSourceName === 'OMS' && tmsCols.subdiv) {
-                            let tSubDiv = normStr(row[tmsCols.subdiv]);
-                            if (tSubDiv.includes('innovativehokair') || tSubDiv.includes('mars3pl')) return;
-                        }
-
-                        if (!orderMap[orderNo]) {
-                            orderMap[orderNo] = {
+                        if (!orderMap[orderKey]) {
+                            orderMap[orderKey] = {
                                 warehouse: tmsWhCol ? row[tmsWhCol] : '',
-                                order: orderNo,
+                                order: rawOrder,
                                 invoice: row[tmsCols.invoice] || '',
                                 subCount: 0,
                                 tmsCount: 0
                             };
                         }
-                        orderMap[orderNo].tmsCount++;
+                        orderMap[orderKey].tmsCount++;
                     });
 
                     // Add rows to sheet
