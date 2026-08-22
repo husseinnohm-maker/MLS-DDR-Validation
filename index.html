@@ -685,7 +685,8 @@
                 tmsStatus: tRow ? tRow[cTms.status] : 'N/A',
                 planDate: isSubRow ? refRow[cSub.planDate] : refRow[cTms.planDate],
                 invNo: isSubRow ? refRow[cSub.invoice] : refRow[cTms.invoice],
-                pallet: isSubRow ? refRow[cSub.pallet] : refRow[cTms.pallet],
+                pallet: isSubRow ? refRow[cSub.pallet] : (tRow ? tRow[cTms.pallet] : 'N/A'),
+                tmsPallet: tRow ? tRow[cTms.pallet] : 'N/A',
                 originalSource: isSubRow ? source : 'TMS'
             };
 
@@ -848,7 +849,8 @@
                         { header: 'TMS Status', key: 'm_tmsStatus', width: 15 },
                         { header: 'Plan Date', key: 'm_planDate', width: 15 },
                         { header: 'Invoice Number', key: 'm_invNo', width: 18 },
-                        { header: 'Pallet No', key: 'm_pallet', width: 12 },
+                        { header: 'Sub. Pallet No', key: 'm_pallet', width: 15 },
+                        { header: 'TMS Pallet No', key: 'm_tmsPallet', width: 15 },
                         { header: '| ORIGINAL DATA |', key: 'm_sep', width: 18 }
                     );
 
@@ -878,6 +880,7 @@
                             m_planDate: item.meta.planDate,
                             m_invNo: item.meta.invNo,
                             m_pallet: item.meta.pallet,
+                            m_tmsPallet: item.meta.tmsPallet,
                             m_sep: '---->'
                         };
                         
