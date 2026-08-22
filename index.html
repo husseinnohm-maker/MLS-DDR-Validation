@@ -510,12 +510,9 @@
             // 1. Validate MLS vs TMS
             if (scope === 'mls' || scope === 'both') {
                 const rawMls = AppState.filesData.mls.rows;
-                const divCol = AppState.cols.mls.div;
                 
-                // Rule: Isolate "warehousing" division
-                const mlsData = divCol ? rawMls.filter(row => {
-                    return normStr(row[divCol]) === 'warehousing';
-                }) : rawMls; // fallback if division col missing
+                // Process ALL divisions & orders in MLS DDR Main
+                const mlsData = rawMls;
 
                 totalProcessed += mlsData.length;
                 const errors = compareDatasets(mlsData, tmsData, 'MLS');
@@ -659,7 +656,7 @@
                     let belongsToScope = false;
 
                     if (sourceName === 'MLS') {
-                        if (tSubDiv.includes('innovativehokair') || tSubDiv.includes('mars3pl')) belongsToScope = true;
+                        belongsToScope = true; // MLS covers all divisions
                     } else if (sourceName === 'OMS') {
                         if (!tSubDiv.includes('innovativehokair') && !tSubDiv.includes('mars3pl')) belongsToScope = true;
                     }
