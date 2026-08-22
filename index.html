@@ -267,6 +267,7 @@
                 allErrors: [],
                 oracleErrors: [],
                 omsErrors: [],
+                summaries: { oracle: [], oms: [] },
                 metrics: { total: 0, errors: 0 }
             },
             currentTab: 'tab-all'
@@ -503,6 +504,7 @@
             AppState.results.allErrors = [];
             AppState.results.oracleErrors = [];
             AppState.results.omsErrors = [];
+            AppState.results.summaries = { oracle: [], oms: [] };
             let totalProcessed = 0;
             
             const tmsData = AppState.filesData.tms.rows;
@@ -512,9 +514,10 @@
                 const rawOracle = AppState.filesData.oracle.rows;
                 
                 totalProcessed += rawOracle.length;
-                const errors = compareDatasets(rawOracle, tmsData, 'Oracle');
-                AppState.results.oracleErrors = errors;
-                AppState.results.allErrors.push(...errors);
+                const result = compareDatasets(rawOracle, tmsData, 'Oracle');
+                AppState.results.oracleErrors = result.errors;
+                AppState.results.summaries.oracle = result.summary;
+                AppState.results.allErrors.push(...result.errors);
             }
 
             // 2. Validate OMS vs TMS
@@ -522,9 +525,10 @@
                 const omsData = AppState.filesData.oms.rows;
                 totalProcessed += omsData.length;
                 
-                const errors = compareDatasets(omsData, tmsData, 'OMS');
-                AppState.results.omsErrors = errors;
-                AppState.results.allErrors.push(...errors);
+                const result = compareDatasets(omsData, tmsData, 'OMS');
+                AppState.results.omsErrors = result.errors;
+                AppState.results.summaries.oms = result.summary;
+                AppState.results.allErrors.push(...result.errors);
             }
 
             AppState.results.metrics.total = totalProcessed;
@@ -663,12 +667,61 @@
                     }
 
                     if (belongsToScope) {
-                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Found in TMS)`, null, tRow, order));
+                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Found in TMS)`, null, tRow, order, tRow, 'TMS'));
                     }
                 }
             }
 
-            return errors;
+            // Phase 3: Build Order Count Summary
+            let summary = [];
+            let allOrders = new Set([...Object.keys(subGroups), ...Object.keys(tmsGroups)]);
+            
+            allOrders.forEach(order => {
+                if (!order) return;
+                let sList = subGroups[order] || [];
+                let tList = tmsGroups[order] || [];
+
+                let belongsToScope = false;
+                if (sList.length > 0) {
+                    belongsToScope = true; // Automatically belongs if it's in the sub-file
+                } else {
+                    // Check if the TMS-only order belongs to the scope
+                    for (let i = 0; i < tList.length; i++) {
+                        let tSubDivCol = cTms.subdiv;
+                        let tSubDiv = tSubDivCol ? normStr(tList[i][tSubDivCol]) : '';
+                        if (sourceName === 'Oracle') {
+                            belongsToScope = true;
+                        } else if (sourceName === 'OMS') {
+                            if (!tSubDiv.includes('innovativehokair') && !tSubDiv.includes('mars3pl')) belongsToScope = true;
+                        }
+                        if (belongsToScope) break;
+                    }
+                }
+
+                if (belongsToScope) {
+                    let refRow = sList.length > 0 ? sList[0] : tList[0];
+                    let isSub = sList.length > 0;
+                    let cRef = isSub ? cSub : cTms;
+                    let headers = isSub ? AppState.filesData[sourceName.toLowerCase()].headers : AppState.filesData.tms.headers;
+                    
+                    // Try to dynamically find a warehouse column for context
+                    let whCol = findColKey(headers, ['warehouse', 'facility', 'whse', 'site']);
+                    let wh = whCol && refRow[whCol] ? refRow[whCol] : 'N/A';
+                    
+                    let inv = refRow[cRef.invoice] || 'N/A';
+
+                    summary.push({
+                        warehouse: wh,
+                        orderNo: order,
+                        invoiceNo: inv,
+                        countTms: tList.length,
+                        countSub: sList.length,
+                        diff: sList.length - tList.length
+                    });
+                }
+            });
+
+            return { errors, summary };
         }
 
         function createErrorObj(source, reason, sRow, tRow, orderNo) {
@@ -1001,6 +1054,76 @@
                 for (const [sheetName, dataList] of Object.entries(sheetGroups)) {
                     createStyledSheet(sheetName, dataList);
                 }
+
+                // --- GENERATE ORDER COUNT SUMMARY SHEETS ---
+                const createSummarySheet = (sheetTitle, summaryData, sourceName) => {
+                    if (!summaryData || summaryData.length === 0) return;
+                    
+                    const worksheet = workbook.addWorksheet(sheetTitle);
+                    worksheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1, activeCell: 'A2' }];
+                    
+                    worksheet.columns = [
+                        { header: 'Warehouse', key: 'warehouse', width: 20 },
+                        { header: 'Order Number', key: 'orderNo', width: 22 },
+                        { header: 'Invoice Number', key: 'invoiceNo', width: 22 },
+                        { header: 'Count of Order no in TMS', key: 'countTms', width: 26 },
+                        { header: `Count of Order no in ${sourceName}`, key: 'countSub', width: 26 },
+                        { header: 'Diff', key: 'diff', width: 12 }
+                    ];
+
+                    // Sort to bring non-zero diffs to the top, then sort by order number alphabetically
+                    summaryData.sort((a, b) => {
+                        let diffA = Math.abs(a.diff);
+                        let diffB = Math.abs(b.diff);
+                        if (diffA !== diffB) return diffB - diffA; 
+                        return String(a.orderNo).localeCompare(String(b.orderNo));
+                    });
+
+                    worksheet.addRows(summaryData);
+
+                    // Style Headers
+                    const headerRow = worksheet.getRow(1);
+                    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } }; // Dark Teal
+                    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                    headerRow.height = 30;
+
+                    worksheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 6 } };
+
+                    // Highlight Differences
+                    worksheet.eachRow((row, rowNumber) => {
+                        if (rowNumber === 1) return; // skip header
+                        
+                        // Default border and alignment
+                        row.eachCell({ includeEmpty: true }, (cell) => {
+                            cell.border = {
+                                top: {style:'thin', color: {argb:'FFCBD5E1'}},
+                                left: {style:'thin', color: {argb:'FFCBD5E1'}},
+                                bottom: {style:'thin', color: {argb:'FFCBD5E1'}},
+                                right: {style:'thin', color: {argb:'FFCBD5E1'}}
+                            };
+                            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                        });
+                        
+                        const diffCell = row.getCell('diff');
+                        
+                        // Center align counts and diff for readability
+                        row.getCell('countTms').alignment = { vertical: 'middle', horizontal: 'center' };
+                        row.getCell('countSub').alignment = { vertical: 'middle', horizontal: 'center' };
+                        diffCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+                        if (diffCell.value !== 0) {
+                            diffCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } }; // Light red
+                            diffCell.font = { color: { argb: 'FFE11D48' }, bold: true }; // Dark red
+                        } else {
+                            diffCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } }; // Light green
+                            diffCell.font = { color: { argb: 'FF166534' } }; // Dark green
+                        }
+                    });
+                };
+
+                createSummarySheet('Oracle Count Summary', AppState.results.summaries.oracle, 'Oracle');
+                createSummarySheet('OMS Count Summary', AppState.results.summaries.oms, 'OMS');
 
                 const buffer = await workbook.xlsx.writeBuffer();
                 const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
