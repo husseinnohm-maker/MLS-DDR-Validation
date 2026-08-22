@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLS DDR Validations</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- SheetJS (xlsx) for Excel processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- ExcelJS for Professional Excel Export Formatting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        
+        /* Glassmorphism utilities */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        }
+
+        .upload-zone {
+            transition: all 0.3s ease;
+        }
+        .upload-zone.dragover {
+            background-color: #eff6ff;
+            border-color: #3b82f6;
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Notification Toast */
+        #toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            min-width: 300px;
+            padding: 16px;
+            border-radius: 8px;
+            color: white;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show {
+            transform: translateX(0);
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <nav class="bg-indigo-600 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <i class="fa-solid fa-file-shield text-2xl"></i>
+                    <span class="font-bold text-xl tracking-wide">MLS DDR Validations</span>
+                </div>
+                <div>
+                    <span class="bg-indigo-500 px-3 py-1 rounded-full text-xs font-medium border border-indigo-400">
+                        Client-Side Processing Only
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+        
+        <!-- Grid for Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- LEFT COLUMN: Inputs & Config -->
+            <div class="lg:col-span-1 space-y-6">
+                
+                <!-- Section 1: File Uploads -->
+                <div class="glass-card rounded-xl p-6">
+                    <h2 class="text-lg font-semibold mb-4 text-slate-800 flex items-center">
+                        <i class="fa-solid fa-cloud-arrow-up text-indigo-500 mr-2"></i> 1. Upload Files
+                    </h2>
+                    
+                    <div class="space-y-4">
+                        <!-- TMS File -->
+                        <div class="upload-zone border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer relative" id="drop-tms" onclick="document.getElementById('file-tms').click()">
+                            <input type="file" id="file-tms" class="hidden" accept=".xlsx, .xls">
+                            <i class="fa-solid fa-file-excel text-green-500 text-2xl mb-2" id="icon-tms"></i>
+                            <p class="text-sm font-medium text-slate-700">DailyDispatchReport_TMS.xlsx</p>
+                            <p class="text-xs text-slate-500 mt-1" id="status-tms">Waiting for file...</p>
+                        </div>
+                        
+                        <!-- MLS File -->
+                        <div class="upload-zone border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer relative" id="drop-mls" onclick="document.getElementById('file-mls').click()">
+                            <input type="file" id="file-mls" class="hidden" accept=".xlsx, .xls">
+                            <i class="fa-solid fa-file-excel text-blue-500 text-2xl mb-2" id="icon-mls"></i>
+                            <p class="text-sm font-medium text-slate-700">MLS_DDR_Main_Report.xlsx</p>
+                            <p class="text-xs text-slate-500 mt-1" id="status-mls">Waiting for file...</p>
+                        </div>
+                        
+                        <!-- OMS File -->
+                        <div class="upload-zone border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer relative" id="drop-oms" onclick="document.getElementById('file-oms').click()">
+                            <input type="file" id="file-oms" class="hidden" accept=".xlsx, .xls">
+                            <i class="fa-solid fa-file-excel text-orange-500 text-2xl mb-2" id="icon-oms"></i>
+                            <p class="text-sm font-medium text-slate-700">OMS DDR.xlsx</p>
+                            <p class="text-xs text-slate-500 mt-1" id="status-oms">Waiting for file...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Configuration & Execution -->
+                <div class="glass-card rounded-xl p-6">
+                    <h2 class="text-lg font-semibold mb-4 text-slate-800 flex items-center">
+                        <i class="fa-solid fa-sliders text-indigo-500 mr-2"></i> 2. Validation Scope
+                    </h2>
+                    
+                    <div class="space-y-3 mb-6">
+                        <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition">
+                            <input type="radio" name="scope" value="mls" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-slate-700">MLS vs TMS Only</span>
+                        </label>
+                        <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition">
+                            <input type="radio" name="scope" value="oms" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-slate-700">OMS vs TMS Only</span>
+                        </label>
+                        <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition border-indigo-200 bg-indigo-50">
+                            <input type="radio" name="scope" value="both" checked class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-slate-900">Compare Both vs TMS</span>
+                        </label>
+                    </div>
+                    
+                    <button id="btn-run" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition-colors flex justify-center items-center">
+                        <i class="fa-solid fa-play mr-2"></i> Run Validation
+                    </button>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Dashboard & Results -->
+            <div class="lg:col-span-2 space-y-6">
+                
+                <!-- KPIs -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="glass-card rounded-xl p-5 border-l-4 border-l-blue-500">
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Total Processed</p>
+                        <h3 class="text-3xl font-bold text-slate-800" id="kpi-total">0</h3>
+                        <p class="text-xs text-slate-400 mt-1">Orders analyzed</p>
+                    </div>
+                    <div class="glass-card rounded-xl p-5 border-l-4 border-l-red-500">
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Discrepancies</p>
+                        <h3 class="text-3xl font-bold text-red-600" id="kpi-errors">0</h3>
+                        <p class="text-xs text-slate-400 mt-1">Total errors found</p>
+                    </div>
+                    <div class="glass-card rounded-xl p-5 border-l-4 border-l-amber-500">
+                        <p class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">Error Rate</p>
+                        <h3 class="text-3xl font-bold text-amber-600" id="kpi-rate">0.0%</h3>
+                        <p class="text-xs text-slate-400 mt-1">Of total processed</p>
+                    </div>
+                </div>
+
+                <!-- Results Area -->
+                <div class="glass-card rounded-xl p-0 overflow-hidden flex flex-col h-[500px]">
+                    <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                        <h2 class="text-lg font-semibold text-slate-800">
+                            <i class="fa-solid fa-list-check text-indigo-500 mr-2"></i> Validation Results
+                        </h2>
+                        <button id="btn-export" class="hidden bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-md shadow transition-colors items-center">
+                            <i class="fa-solid fa-file-export mr-2"></i> Export Report
+                        </button>
+                    </div>
+                    
+                    <!-- Tabs -->
+                    <div class="flex border-b border-slate-200 px-2" id="tabs-container">
+                        <button class="tab-btn active px-4 py-3 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600" data-target="tab-all">All Errors</button>
+                        <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-mls">MLS vs TMS</button>
+                        <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-oms">OMS vs TMS</button>
+                    </div>
+                    
+                    <!-- Table Container -->
+                    <div class="flex-grow overflow-auto p-0 relative">
+                        <table class="w-full text-left border-collapse text-sm">
+                            <thead class="bg-slate-100 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">Source</th>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">Order Number</th>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">Error Reason</th>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">Sub. Status</th>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">TMS Status</th>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">Plan Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-body" class="divide-y divide-slate-100">
+                                <!-- Empty State -->
+                                <tr>
+                                    <td colspan="6" class="p-12 text-center text-slate-400">
+                                        <i class="fa-solid fa-inbox text-4xl mb-3 opacity-50"></i>
+                                        <p>No validation results to display yet.</p>
+                                        <p class="text-xs mt-1">Upload files and run validation to see errors here.</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container"></div>
+
+    <script>
+        /* --- APPLICATION STATE --- */
+        const AppState = {
+            filesData: {
+                tms: { headers: {}, rows: [] },
+                mls: { headers: {}, rows: [] },
+                oms: { headers: {}, rows: [] }
+            },
+            cols: {
+                tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'M', pallet: 'Z', invStatus: 'AA', podStatus: 'AD', subdiv: null },
+                oms: { planDate: 'A', status: 'F', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
+                mls: { planDate: 'A', invoice: 'I', order: 'K', pallet: 'Y', invStatus: 'AA', podStatus: 'AD', div: null, subdiv: null }
+            },
+            results: {
+                allErrors: [],
+                mlsErrors: [],
+                omsErrors: [],
+                metrics: { total: 0, errors: 0 }
+            },
+            currentTab: 'tab-all'
+        };
+
+        /* --- UTILITY FUNCTIONS --- */
+        
+        // Show non-blocking toast notifications
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let bgClass = 'bg-blue-600';
+            let icon = 'fa-circle-info';
+            if (type === 'error') { bgClass = 'bg-red-600'; icon = 'fa-circle-exclamation'; }
+            else if (type === 'success') { bgClass = 'bg-green-600'; icon = 'fa-check-circle'; }
+            else if (type === 'warning') { bgClass = 'bg-amber-500'; icon = 'fa-triangle-exclamation'; }
+            
+            toast.className = `toast ${bgClass} flex items-start`;
+            toast.innerHTML = `
+                <i class="fa-solid ${icon} mt-1 mr-3"></i>
+                <div>
+                    <h4 class="font-bold text-sm capitalize">${type}</h4>
+                    <p class="text-sm opacity-90">${message}</p>
+                </div>
+            `;
+            
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        // Format JS Date to d-mmm-yyyy for HTML UI
+        function formatDateForUI(val) {
+            if (val instanceof Date && !isNaN(val)) {
+                const d = val.getDate();
+                const m = val.toLocaleString('default', { month: 'short' });
+                const y = val.getFullYear();
+                return `${d}-${m}-${y}`;
+            }
+            return val || '-';
+        }
+
+        // Normalize string for comparison
+        function normStr(k) {
+            if (k === null || k === undefined) return '';
+            return k.toString().toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        }
+
+        // Helper to check and format field mismatches
+        function checkMismatch(fieldName, sVal, tVal, type = 'string') {
+            let sNorm, tNorm, sDisp, tDisp;
+            
+            // Format for display (fallbacks)
+            sDisp = (sVal === null || sVal === undefined || sVal === '') ? 'Empty' : sVal;
+            tDisp = (tVal === null || tVal === undefined || tVal === '') ? 'Empty' : tVal;
+
+            if (type === 'date') {
+                // Smart Date Normalization
+                let dS = new Date(sVal);
+                let dT = new Date(tVal);
+                let isValidS = sVal !== null && sVal !== '' && !isNaN(dS.getTime());
+                let isValidT = tVal !== null && tVal !== '' && !isNaN(dT.getTime());
+                
+                // Update display strings to cleanly formatted dates if valid
+                sDisp = isValidS ? formatDateForUI(dS) : sDisp;
+                tDisp = isValidT ? formatDateForUI(dT) : tDisp;
+
+                if (isValidS && isValidT && (formatDateForUI(dS) === formatDateForUI(dT))) {
+                    // Force a match if they resolve to the exact same calendar day
+                    sNorm = 1; 
+                    tNorm = 1; 
+                } else {
+                    sNorm = isValidS ? dS.getTime() : normStr(sVal);
+                    tNorm = isValidT ? dT.getTime() : normStr(tVal);
+                }
+            } else if (type === 'number') {
+                // Smart Numeric Normalization (5.0000 === 5)
+                let nS = parseFloat(sVal);
+                let nT = parseFloat(tVal);
+                sNorm = isNaN(nS) ? normStr(sVal) : nS;
+                tNorm = isNaN(nT) ? normStr(tVal) : nT;
+            } else {
+                // Flexible String Matching (e.g., "HOLD_MLS" === "MLS Hold")
+                const flexNorm = (v) => {
+                    if (v === null || v === undefined) return '';
+                    let str = v.toString().toLowerCase().trim();
+                    if (str === 'blank') return ''; // Treat literal text "blank" as an empty cell
+                    // Replace non-alphanumeric chars (like underscores) with space
+                    let cleaned = str.replace(/[^a-z0-9]/g, ' ');
+                    // Tokenize words, sort them alphabetically, and smash together
+                    return cleaned.split(/\s+/).filter(t => t.length > 0).sort().join('');
+                };
+                sNorm = flexNorm(sVal);
+                tNorm = flexNorm(tVal);
+            }
+            
+            if (sNorm !== tNorm) {
+                return `${fieldName} Mismatch (Sub: ${sDisp} vs TMS: ${tDisp})`;
+            }
+            return null;
+        }
+
+        // Group array of objects by a specific key function
+        function groupBy(array, keyFn) {
+            return array.reduce((result, item) => {
+                const key = keyFn(item);
+                if (key) {
+                    if (!result[key]) result[key] = [];
+                    result[key].push(item);
+                }
+                return result;
+            }, {});
+        }
+
+        // Multi-level sort to sequence duplicates safely
+        function multiSort(a, b, colsObj) {
+            let pdA = String(a[colsObj.planDate] || '');
+            let pdB = String(b[colsObj.planDate] || '');
+            if (pdA !== pdB) return pdA > pdB ? 1 : -1;
+
+            let invA = String(a[colsObj.invoice] || '');
+            let invB = String(b[colsObj.invoice] || '');
+            if (invA !== invB) return invA > invB ? 1 : -1;
+
+            let palA = String(a[colsObj.pallet] || '');
+            let palB = String(b[colsObj.pallet] || '');
+            if (palA !== palB) return palA > palB ? 1 : -1;
+
+            return 0;
+        }
+
+        // Find column letter by checking header values against keywords
+        function findColKey(headers, keywords) {
+            for (const [colKey, headerVal] of Object.entries(headers)) {
+                if (!headerVal) continue;
+                const lowerHeader = String(headerVal).toLowerCase();
+                if (keywords.some(kw => lowerHeader.includes(kw))) return colKey;
+            }
+            return null;
+        }
+
+        function setupFileHandling(inputId, dropId, typeKey) {
+            const input = document.getElementById(inputId);
+            const drop = document.getElementById(dropId);
+            const status = document.getElementById(`status-${typeKey}`);
+            const icon = document.getElementById(`icon-${typeKey}`);
+
+            input.addEventListener('change', (e) => processFile(e.target.files[0], typeKey, status, icon));
+            
+            drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('dragover'); });
+            drop.addEventListener('dragleave', () => { drop.classList.remove('dragover'); });
+            drop.addEventListener('drop', (e) => {
+                e.preventDefault();
+                drop.classList.remove('dragover');
+                if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0], typeKey, status, icon);
+            });
+        }
+
+        function processFile(file, typeKey, statusEl, iconEl) {
+            if (!file) return;
+            
+            if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+                showToast(`Invalid file type for ${typeKey.toUpperCase()}. Please upload an Excel file.`, 'error');
+                return;
+            }
+
+            statusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-indigo-500"></i> Parsing...`;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    // Use header: "A" to map to strict column letters, cellDates to convert to Date objects
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: "A", defval: "" });
+                    
+                    if (jsonData.length < 2) throw new Error("File appears empty or malformed");
+
+                    const headers = jsonData[0]; // Row 1: Headers
+                    const dataRows = jsonData.slice(1); // Row 2+: Data
+
+                    AppState.filesData[typeKey] = { headers, rows: dataRows };
+                    
+                    // Dynamically find Division/Subdivision columns where letters weren't explicitly provided
+                    if (typeKey === 'tms') {
+                        AppState.cols.tms.subdiv = findColKey(headers, ['subdivision', 'sub-div', 'sub div']);
+                    } else if (typeKey === 'mls') {
+                        AppState.cols.mls.div = findColKey(headers, ['division', 'div']);
+                        AppState.cols.mls.subdiv = findColKey(headers, ['subdivision', 'sub-div', 'sub div']);
+                    }
+
+                    statusEl.innerHTML = `<span class="text-green-600 font-medium">Loaded (${dataRows.length} rows)</span>`;
+                    iconEl.classList.remove('text-blue-500', 'text-orange-500', 'text-green-500');
+                    iconEl.classList.add('text-indigo-600');
+                    showToast(`${file.name} loaded successfully!`, 'success');
+                } catch (err) {
+                    console.error(err);
+                    statusEl.innerHTML = `<span class="text-red-500">Error parsing file</span>`;
+                    showToast(`Failed to parse ${file.name}`, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        setupFileHandling('file-tms', 'drop-tms', 'tms');
+        setupFileHandling('file-mls', 'drop-mls', 'mls');
+        setupFileHandling('file-oms', 'drop-oms', 'oms');
+
+        document.getElementById('btn-run').addEventListener('click', () => {
+            const scope = document.querySelector('input[name="scope"]:checked').value;
+            
+            if (!AppState.filesData.tms.rows.length) {
+                showToast("The Main TMS file (DailyDispatchReport_TMS.xlsx) is strictly required.", "error");
+                return;
+            }
+            if ((scope === 'mls' || scope === 'both') && !AppState.filesData.mls.rows.length) {
+                showToast("MLS DDR Main file is required for the selected scope.", "error");
+                return;
+            }
+            if ((scope === 'oms' || scope === 'both') && !AppState.filesData.oms.rows.length) {
+                showToast("OMS DDR file is required for the selected scope.", "error");
+                return;
+            }
+
+            runValidationEngine(scope);
+        });
+
+        function runValidationEngine(scope) {
+            AppState.results.allErrors = [];
+            AppState.results.mlsErrors = [];
+            AppState.results.omsErrors = [];
+            let totalProcessed = 0;
+            
+            const tmsData = AppState.filesData.tms.rows;
+
+            // 1. Validate MLS vs TMS
+            if (scope === 'mls' || scope === 'both') {
+                const rawMls = AppState.filesData.mls.rows;
+                const divCol = AppState.cols.mls.div;
+                
+                // Rule: Isolate "warehousing" division
+                const mlsData = divCol ? rawMls.filter(row => {
+                    return normStr(row[divCol]) === 'warehousing';
+                }) : rawMls; // fallback if division col missing
+
+                totalProcessed += mlsData.length;
+                const errors = compareDatasets(mlsData, tmsData, 'MLS');
+                AppState.results.mlsErrors = errors;
+                AppState.results.allErrors.push(...errors);
+            }
+
+            // 2. Validate OMS vs TMS
+            if (scope === 'oms' || scope === 'both') {
+                const omsData = AppState.filesData.oms.rows;
+                totalProcessed += omsData.length;
+                
+                const errors = compareDatasets(omsData, tmsData, 'OMS');
+                AppState.results.omsErrors = errors;
+                AppState.results.allErrors.push(...errors);
+            }
+
+            AppState.results.metrics.total = totalProcessed;
+            AppState.results.metrics.errors = AppState.results.allErrors.length;
+            
+            renderDashboard();
+            showToast("Validation completed successfully.", "success");
+        }
+
+        function compareDatasets(subData, tmsData, sourceName) {
+            let errors = [];
+            let cSub = AppState.cols[sourceName.toLowerCase()];
+            let cTms = AppState.cols.tms;
+            
+            // Group by strict Order Number Column
+            let subGroups = groupBy(subData, row => row[cSub.order]);
+            let tmsGroups = groupBy(tmsData, row => row[cTms.order]);
+
+            // Phase 1: Check orders present in Subsidiary
+            for (let order in subGroups) {
+                if (!order) continue;
+                
+                let sList = subGroups[order];
+                let tList = tmsGroups[order] || [];
+
+                sList.sort((a, b) => multiSort(a, b, cSub));
+                tList.sort((a, b) => multiSort(a, b, cTms));
+
+                let maxLen = Math.max(sList.length, tList.length);
+                
+                for (let i = 0; i < maxLen; i++) {
+                    let sRow = sList[i];
+                    let tRow = tList[i];
+
+                    if (sRow && !tRow) {
+                        errors.push(createErrorObj(sourceName, `Missing in TMS (Extra count in ${sourceName})`, sRow, null, order));
+                    } else if (!sRow && tRow) {
+                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in TMS)`, null, tRow, order));
+                    } else if (sRow && tRow) {
+                        // Both exist, validate all relevant fields comprehensively
+                        let rowMismatches = [];
+                        
+                        // 1. Plan Date Check
+                        let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], tRow[cTms.planDate], 'date');
+                        if (pdErr) rowMismatches.push(pdErr);
+                        
+                        // 2. Invoice Number Check
+                        let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], tRow[cTms.invoice], 'string');
+                        if (invErr) rowMismatches.push(invErr);
+                        
+                        // 3. Pallet Count Check
+                        let palErr = checkMismatch('Pallets', sRow[cSub.pallet], tRow[cTms.pallet], 'number');
+                        if (palErr) rowMismatches.push(palErr);
+                        
+                        // 4. Invoice Status Check (With OMS Mapping Logic)
+                        if (cSub.invStatus) {
+                            let sInvOriginal = sRow[cSub.invStatus];
+                            let sInvStatus = sInvOriginal;
+                            
+                            // Map OMS terminology to TMS terminology for accurate matching
+                            if (sourceName === 'OMS') {
+                                let v = String(sInvOriginal || '').toLowerCase().trim();
+                                if (v === 'not dispatched' || v === 'not delivered') sInvStatus = 'not received';
+                                else if (v === 'fully delivered' || v === 'partially delivered') sInvStatus = 'received';
+                            }
+                            
+                            let invStErr = checkMismatch('Invoice Status', sInvStatus, tRow[cTms.invStatus], 'string');
+                            
+                            // Restore original text for the error display if a mapping was applied
+                            if (invStErr && sInvOriginal !== sInvStatus) {
+                                let dispMapped = (sInvStatus === null || sInvStatus === undefined || sInvStatus === '') ? 'Empty' : sInvStatus;
+                                let dispOrig = (sInvOriginal === null || sInvOriginal === undefined || sInvOriginal === '') ? 'Empty' : sInvOriginal;
+                                invStErr = invStErr.replace(`Sub: ${dispMapped}`, `Sub: ${dispOrig}`);
+                            }
+                            if (invStErr) rowMismatches.push(invStErr);
+                        }
+                        
+                        // 5. POD Status Check (With OMS Mapping Logic)
+                        if (cSub.podStatus) {
+                            let sPodOriginal = sRow[cSub.podStatus];
+                            let sPodStatus = sPodOriginal;
+                            
+                            // Map OMS terminology to TMS terminology for accurate matching
+                            if (sourceName === 'OMS') {
+                                let v = String(sPodOriginal || '').toLowerCase().trim();
+                                if (v === 'pending by mls') sPodStatus = 'mls hold';
+                                else if (v === 'pending by customer') sPodStatus = 'hold';
+                                else if (v === 'confirmed by destination') sPodStatus = ''; // maps to blank
+                            }
+
+                            let podErr = checkMismatch('POD Status', sPodStatus, tRow[cTms.podStatus], 'string');
+
+                            // Restore original text for the error display if a mapping was applied
+                            if (podErr && sPodOriginal !== sPodStatus) {
+                                let dispMapped = (sPodStatus === null || sPodStatus === undefined || sPodStatus === '') ? 'Empty' : sPodStatus;
+                                let dispOrig = (sPodOriginal === null || sPodOriginal === undefined || sPodOriginal === '') ? 'Empty' : sPodOriginal;
+                                podErr = podErr.replace(`Sub: ${dispMapped}`, `Sub: ${dispOrig}`);
+                            }
+                            if (podErr) rowMismatches.push(podErr);
+                        }
+
+                        // 6. Overall Status Check (OMS Only)
+                        if (sourceName === 'OMS' && cSub.status) {
+                            let stErr = checkMismatch('Status', sRow[cSub.status], tRow[cTms.status], 'string');
+                            if (stErr) rowMismatches.push(stErr);
+                        }
+                        
+                        // If any mismatches found, log them
+                        if (rowMismatches.length > 0) {
+                            errors.push(createErrorObj(sourceName, rowMismatches.join('  |  '), sRow, tRow, order));
+                        }
+                    }
+                }
+            }
+
+            // Phase 2: Check orders present in TMS but entirely missing in Subsidiary scope
+            for (let order in tmsGroups) {
+                if (subGroups[order]) continue; // Handled in Phase 1
+
+                let tList = tmsGroups[order];
+                for (let i = 0; i < tList.length; i++) {
+                    let tRow = tList[i];
+                    let tSubDivCol = cTms.subdiv;
+                    let tSubDiv = tSubDivCol ? normStr(tRow[tSubDivCol]) : '';
+                    
+                    let belongsToScope = false;
+
+                    if (sourceName === 'MLS') {
+                        if (tSubDiv.includes('innovativehokair') || tSubDiv.includes('mars3pl')) belongsToScope = true;
+                    } else if (sourceName === 'OMS') {
+                        if (!tSubDiv.includes('innovativehokair') && !tSubDiv.includes('mars3pl')) belongsToScope = true;
+                    }
+
+                    if (belongsToScope) {
+                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Found in TMS)`, null, tRow, order));
+                    }
+                }
+            }
+
+            return errors;
+        }
+
+        function createErrorObj(source, reason, sRow, tRow, orderNo) {
+            let refRow = sRow || tRow || {};
+            let isSubRow = !!sRow;
+            let cSub = AppState.cols[source.toLowerCase()];
+            let cTms = AppState.cols.tms;
+
+            // Structure cleanly for export separation
+            let errorMeta = {
+                errReason: reason,
+                source: source,
+                orderNo: orderNo,
+                subStatus: sRow && cSub.status ? sRow[cSub.status] : 'N/A',
+                tmsStatus: tRow ? tRow[cTms.status] : 'N/A',
+                planDate: isSubRow ? refRow[cSub.planDate] : refRow[cTms.planDate],
+                invNo: isSubRow ? refRow[cSub.invoice] : refRow[cTms.invoice],
+                pallet: isSubRow ? refRow[cSub.pallet] : refRow[cTms.pallet],
+                originalSource: isSubRow ? source : 'TMS'
+            };
+
+            let headersObj = isSubRow ? AppState.filesData[source.toLowerCase()].headers : AppState.filesData.tms.headers;
+
+            return {
+                meta: errorMeta,
+                rawRow: refRow,
+                headersObj: headersObj
+            };
+        }
+
+        function renderDashboard() {
+            document.getElementById('kpi-total').innerText = AppState.results.metrics.total.toLocaleString();
+            document.getElementById('kpi-errors').innerText = AppState.results.metrics.errors.toLocaleString();
+            
+            let rate = 0;
+            if (AppState.results.metrics.total > 0) {
+                rate = (AppState.results.metrics.errors / AppState.results.metrics.total) * 100;
+            }
+            document.getElementById('kpi-rate').innerText = rate.toFixed(1) + '%';
+
+            const exportBtn = document.getElementById('btn-export');
+            if (AppState.results.allErrors.length > 0) {
+                exportBtn.classList.remove('hidden');
+                exportBtn.classList.add('flex');
+            } else {
+                exportBtn.classList.add('hidden');
+                exportBtn.classList.remove('flex');
+            }
+
+            renderTable();
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('active', 'text-indigo-600', 'border-indigo-600');
+                    b.classList.add('text-slate-500', 'border-transparent');
+                });
+                
+                e.target.classList.add('active', 'text-indigo-600', 'border-indigo-600');
+                e.target.classList.remove('text-slate-500', 'border-transparent');
+                
+                AppState.currentTab = e.target.getAttribute('data-target');
+                renderTable();
+            });
+        });
+
+        function renderTable() {
+            const tbody = document.getElementById('results-body');
+            tbody.innerHTML = '';
+
+            let dataToRender = [];
+            if (AppState.currentTab === 'tab-all') dataToRender = AppState.results.allErrors;
+            else if (AppState.currentTab === 'tab-mls') dataToRender = AppState.results.mlsErrors;
+            else if (AppState.currentTab === 'tab-oms') dataToRender = AppState.results.omsErrors;
+
+            if (dataToRender.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="p-12 text-center text-slate-400">
+                            <i class="fa-solid fa-check-circle text-4xl mb-3 text-green-400 opacity-80"></i>
+                            <p class="text-slate-600 font-medium">No discrepancies found for this view.</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            const renderLimit = Math.min(dataToRender.length, 500);
+
+            for (let i = 0; i < renderLimit; i++) {
+                let err = dataToRender[i].meta;
+                let row = document.createElement('tr');
+                row.className = 'hover:bg-slate-50 transition-colors fade-in';
+                
+                let reasonBadgeClass = 'bg-red-100 text-red-700 border-red-200';
+                if (err.errReason.includes('Mismatch')) {
+                    reasonBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300';
+                }
+                
+                // Format reason to break on pipes for UI
+                let displayReason = err.errReason.replace(/ \| /g, '<br><span class="text-gray-400 text-[10px]">AND</span> ');
+                // Clean up N/A for MLS view
+                let subStatusDisp = err.subStatus && err.subStatus !== 'N/A' ? err.subStatus : '-';
+
+                row.innerHTML = `
+                    <td class="p-3 border-b text-slate-700 font-medium whitespace-nowrap">${err.source}</td>
+                    <td class="p-3 border-b text-slate-800 font-semibold whitespace-nowrap">${err.orderNo || '-'}</td>
+                    <td class="p-3 border-b max-w-xs">
+                        <div class="px-2 py-1 text-xs font-medium rounded border ${reasonBadgeClass} leading-tight inline-block">
+                            ${displayReason}
+                        </div>
+                    </td>
+                    <td class="p-3 border-b text-slate-600 whitespace-nowrap">${subStatusDisp}</td>
+                    <td class="p-3 border-b text-slate-600 whitespace-nowrap">${err.tmsStatus}</td>
+                    <td class="p-3 border-b text-slate-500 whitespace-nowrap">${formatDateForUI(err.planDate)}</td>
+                `;
+                tbody.appendChild(row);
+            }
+            
+            if (dataToRender.length > 500) {
+                 let infoRow = document.createElement('tr');
+                 infoRow.innerHTML = `<td colspan="6" class="p-4 text-center text-xs text-slate-500 bg-slate-50">Showing first 500 records. Export to view all ${dataToRender.length} errors.</td>`;
+                 tbody.appendChild(infoRow);
+            }
+        }
+
+        document.getElementById('btn-export').addEventListener('click', async () => {
+            if (AppState.results.allErrors.length === 0) {
+                showToast("No errors to export.", "warning");
+                return;
+            }
+
+            try {
+                showToast("Generating formatted Excel report...", "info");
+                
+                const workbook = new ExcelJS.Workbook();
+                workbook.creator = 'MLS DDR Validation Dashboard';
+                
+                const createStyledSheet = (sheetName, dataList) => {
+                    if (dataList.length === 0) return;
+                    
+                    const worksheet = workbook.addWorksheet(sheetName);
+
+                    // Professional Feature: Freeze top row and first 3 columns
+                    worksheet.views = [
+                        { state: 'frozen', xSplit: 3, ySplit: 1, activeCell: 'D2' }
+                    ];
+
+                    // Collect all unique original column letters (A, B, C...) present across the errors
+                    let originalCols = new Set();
+                    dataList.forEach(item => {
+                        Object.keys(item.rawRow).forEach(k => originalCols.add(k));
+                    });
+                    
+                    // Helper to correctly sort Excel column letters logically (A=1, B=2 ... Z=26, AA=27)
+                    const colToInt = (col) => {
+                        let num = 0;
+                        for (let i = 0; i < col.length; i++) {
+                            num = num * 26 + (col.charCodeAt(i) - 64);
+                        }
+                        return num;
+                    };
+                    const sortedOrigCols = Array.from(originalCols).sort((a, b) => colToInt(a) - colToInt(b));
+
+                    // 1. Define Worksheet Columns Layout
+                    let sheetColumns = [
+                        { header: 'Error Reason (Classification)', key: 'm_errReason', width: 55 },
+                        { header: 'Source', key: 'm_source', width: 10 },
+                        { header: 'Order Number', key: 'm_orderNo', width: 18 }
+                    ];
+
+                    // Dynamically exclude Sub. Status column for MLS since they don't have one
+                    if (!sheetName.includes('MLS')) {
+                        sheetColumns.push({ header: 'Sub. Status', key: 'm_subStatus', width: 15 });
+                    }
+
+                    sheetColumns.push(
+                        { header: 'TMS Status', key: 'm_tmsStatus', width: 15 },
+                        { header: 'Plan Date', key: 'm_planDate', width: 15 },
+                        { header: 'Invoice Number', key: 'm_invNo', width: 18 },
+                        { header: 'Pallet No', key: 'm_pallet', width: 12 },
+                        { header: '| ORIGINAL DATA |', key: 'm_sep', width: 18 }
+                    );
+
+                    // Dynamically map exact original headers
+                    sortedOrigCols.forEach(colLetter => {
+                        // Find the header text for this column from the first row that has it
+                        let headerText = colLetter; 
+                        for(let i=0; i<dataList.length; i++) {
+                            if(dataList[i].headersObj[colLetter]) {
+                                headerText = dataList[i].headersObj[colLetter];
+                                break;
+                            }
+                        }
+                        sheetColumns.push({ header: headerText, key: `orig_${colLetter}`, width: 15 });
+                    });
+
+                    worksheet.columns = sheetColumns;
+
+                    // 2. Add Rows
+                    dataList.forEach(item => {
+                        let rowData = {
+                            m_errReason: item.meta.errReason,
+                            m_source: item.meta.source,
+                            m_orderNo: item.meta.orderNo,
+                            m_subStatus: item.meta.subStatus,
+                            m_tmsStatus: item.meta.tmsStatus,
+                            m_planDate: item.meta.planDate,
+                            m_invNo: item.meta.invNo,
+                            m_pallet: item.meta.pallet,
+                            m_sep: '---->'
+                        };
+                        
+                        sortedOrigCols.forEach(colLetter => {
+                            rowData[`orig_${colLetter}`] = item.rawRow[colLetter];
+                        });
+
+                        worksheet.addRow(rowData);
+                    });
+
+                    // 3. Style Formatting
+                    const headerRow = worksheet.getRow(1);
+                    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+                    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }; // Dark slate for pro look
+                    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                    headerRow.height = 30;
+
+                    worksheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheetColumns.length } };
+
+                    // Style Original Data Separator Header specifically
+                    let sepHeaderCell = headerRow.getCell('m_sep');
+                    sepHeaderCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } }; // Darker slate
+                    sepHeaderCell.font = { bold: true, color: { argb: 'FF38BDF8' } }; // Light blue text
+
+                    worksheet.eachRow((row, rowNumber) => {
+                        if (rowNumber === 1) return; 
+
+                        // Find "Error Reason" Column
+                        const reasonCell = row.getCell('m_errReason');
+                        const reasonText = reasonCell.value || "";
+                        let bgColor = 'FFFFE4E6'; // Light red
+                        let fontColor = 'FFE11D48'; // Dark red
+
+                        if (reasonText.includes('Mismatch')) {
+                            bgColor = 'FFFFFEBB'; // Light yellow
+                            fontColor = 'FF92400E'; // Dark amber
+                        } else if (reasonText.includes('Found in TMS')) {
+                            bgColor = 'FFE0E7FF'; // Light Indigo
+                            fontColor = 'FF3730A3'; // Dark Indigo
+                        }
+
+                        reasonCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+                        reasonCell.font = { color: { argb: fontColor }, bold: true };
+                        reasonCell.alignment = { wrapText: true, vertical: 'middle' }; // Wrap long reasons
+
+                        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                            // Apply Date Formatting Globally
+                            if (cell.value instanceof Date && !isNaN(cell.value)) {
+                                cell.numFmt = 'd-mmm-yyyy'; // Strictly Date, no time
+                            }
+                            
+                            // Alternate row shading for better readability (Professional touch)
+                            if (colNumber > 1) { // Skip coloring over the error reason
+                                if (rowNumber % 2 === 0) {
+                                    if (!cell.fill || cell.fill.type !== 'pattern') {
+                                       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+                                    }
+                                }
+                            }
+
+                            cell.border = {
+                                top: {style:'thin', color: {argb:'FFCBD5E1'}},
+                                left: {style:'thin', color: {argb:'FFCBD5E1'}},
+                                bottom: {style:'thin', color: {argb:'FFCBD5E1'}},
+                                right: {style:'thin', color: {argb:'FFCBD5E1'}}
+                            };
+                            
+                            // Align text nicely
+                            if (colNumber !== 1) { 
+                                cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                            }
+                        });
+                        
+                        // Style separator cell
+                        let sepCell = row.getCell('m_sep');
+                        sepCell.font = { color: { argb: 'FF94A3B8' }, bold: true };
+                        sepCell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    });
+                };
+
+                // Split errors based on which file the original data came from
+                const omsSubErrors = AppState.results.omsErrors.filter(e => e.meta.originalSource === 'OMS');
+                const omsTmsErrors = AppState.results.omsErrors.filter(e => e.meta.originalSource === 'TMS');
+                const mlsSubErrors = AppState.results.mlsErrors.filter(e => e.meta.originalSource === 'MLS');
+                const mlsTmsErrors = AppState.results.mlsErrors.filter(e => e.meta.originalSource === 'TMS');
+
+                createStyledSheet("OMS vs TMS (OMS Data)", omsSubErrors);
+                createStyledSheet("OMS vs TMS (TMS Data)", omsTmsErrors);
+                createStyledSheet("MLS vs TMS (MLS Data)", mlsSubErrors);
+                createStyledSheet("MLS vs TMS (TMS Data)", mlsTmsErrors);
+
+                const buffer = await workbook.xlsx.writeBuffer();
+                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = window.URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Validation_Errors_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                showToast("Report exported successfully!", "success");
+
+            } catch (err) {
+                console.error("Export Error: ", err);
+                showToast("An error occurred during export.", "error");
+            }
+        });
+    </script>
+</body>
+</html>
