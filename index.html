@@ -635,9 +635,9 @@
                             if (stErr) rowMismatches.push(stErr);
                         }
                         
-                        // If any mismatches found, log them
-                        if (rowMismatches.length > 0) {
-                            errors.push(createErrorObj(sourceName, rowMismatches.join('  |  '), sRow, tRow, order));
+                        // If any mismatches found, log them individually so they appear on separate rows and sheets
+                        for (let rm = 0; rm < rowMismatches.length; rm++) {
+                            errors.push(createErrorObj(sourceName, rowMismatches[rm], sRow, tRow, order));
                         }
                     }
                 }
@@ -768,8 +768,7 @@
                     reasonBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300';
                 }
                 
-                // Format reason to break on pipes for UI
-                let displayReason = err.errReason.replace(/ \| /g, '<br><span class="text-gray-400 text-[10px]">AND</span> ');
+                let displayReason = err.errReason; // No longer need to replace pipes, as they are separate rows now
                 // Clean up N/A for MLS view
                 let subStatusDisp = err.subStatus && err.subStatus !== 'N/A' ? err.subStatus : '-';
 
@@ -959,16 +958,37 @@
                     });
                 };
 
-                // Split errors based on which file the original data came from
-                const omsSubErrors = AppState.results.omsErrors.filter(e => e.meta.originalSource === 'OMS');
-                const omsTmsErrors = AppState.results.omsErrors.filter(e => e.meta.originalSource === 'TMS');
-                const mlsSubErrors = AppState.results.mlsErrors.filter(e => e.meta.originalSource === 'MLS');
-                const mlsTmsErrors = AppState.results.mlsErrors.filter(e => e.meta.originalSource === 'TMS');
+                // Dynamically group errors into distinct sheets based on error type and source
+                const sheetGroups = {};
+                
+                AppState.results.allErrors.forEach(item => {
+                    const reason = item.meta.errReason;
+                    const scope = item.meta.source; // 'MLS' or 'OMS'
+                    let sheetName = "";
+                    
+                    if (reason.includes('Missing in TMS')) {
+                        sheetName = `${scope} - Missing in TMS`;
+                    } else if (reason.includes(`Missing in ${scope}`)) {
+                        sheetName = `TMS - Missing in ${scope}`;
+                    } else {
+                        // Extract the specific mismatch type (e.g., "Pallets", "Plan Date")
+                        let mismatchType = reason.split(' Mismatch')[0].trim();
+                        sheetName = `${scope} - ${mismatchType} Mismatch`;
+                    }
+                    
+                    // Excel limits sheet names to 31 chars and forbids certain characters
+                    sheetName = sheetName.substring(0, 31).replace(/[\\/?*\[\]]/g, '');
+                    
+                    if (!sheetGroups[sheetName]) {
+                        sheetGroups[sheetName] = [];
+                    }
+                    sheetGroups[sheetName].push(item);
+                });
 
-                createStyledSheet("OMS vs TMS (OMS Data)", omsSubErrors);
-                createStyledSheet("OMS vs TMS (TMS Data)", omsTmsErrors);
-                createStyledSheet("MLS vs TMS (MLS Data)", mlsSubErrors);
-                createStyledSheet("MLS vs TMS (TMS Data)", mlsTmsErrors);
+                // Create a styled sheet for each dynamically generated group
+                for (const [sheetName, dataList] of Object.entries(sheetGroups)) {
+                    createStyledSheet(sheetName, dataList);
+                }
 
                 const buffer = await workbook.xlsx.writeBuffer();
                 const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
