@@ -572,9 +572,11 @@
                     } else if (sRow && tRow) {
                         // Both exist, validate all relevant fields comprehensively
                         
-                        // 1. Plan Date Check
-                        let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], tRow[cTms.planDate], 'date', sourceName);
-                        if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, tRow, order));
+                        // 1. Plan Date Check (Skipped for OMS per requirements)
+                        if (sourceName !== 'OMS') {
+                            let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], tRow[cTms.planDate], 'date', sourceName);
+                            if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, tRow, order));
+                        }
                         
                         // 2. Invoice Number Check
                         let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], tRow[cTms.invoice], 'string', sourceName);
