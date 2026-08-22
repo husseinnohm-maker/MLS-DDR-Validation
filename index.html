@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MLS DDR Validations</title>
+    <title>Oracle & OMS DDR Validations</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -97,7 +97,7 @@
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center space-x-3">
                     <i class="fa-solid fa-file-shield text-2xl"></i>
-                    <span class="font-bold text-xl tracking-wide">MLS DDR Validations</span>
+                    <span class="font-bold text-xl tracking-wide">Oracle DDR Validations</span>
                 </div>
                 <div>
                     <span class="bg-indigo-500 px-3 py-1 rounded-full text-xs font-medium border border-indigo-400">
@@ -131,12 +131,12 @@
                             <p class="text-xs text-slate-500 mt-1" id="status-tms">Waiting for file...</p>
                         </div>
                         
-                        <!-- MLS File -->
-                        <div class="upload-zone border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer relative" id="drop-mls" onclick="document.getElementById('file-mls').click()">
-                            <input type="file" id="file-mls" class="hidden" accept=".xlsx, .xls">
-                            <i class="fa-solid fa-file-excel text-blue-500 text-2xl mb-2" id="icon-mls"></i>
-                            <p class="text-sm font-medium text-slate-700">MLS_DDR_Main_Report.xlsx</p>
-                            <p class="text-xs text-slate-500 mt-1" id="status-mls">Waiting for file...</p>
+                        <!-- Oracle File -->
+                        <div class="upload-zone border-2 border-dashed border-slate-300 rounded-lg p-4 text-center cursor-pointer relative" id="drop-oracle" onclick="document.getElementById('file-oracle').click()">
+                            <input type="file" id="file-oracle" class="hidden" accept=".xlsx, .xls">
+                            <i class="fa-solid fa-file-excel text-blue-500 text-2xl mb-2" id="icon-oracle"></i>
+                            <p class="text-sm font-medium text-slate-700">Oracle_DDR_Main_Report.xlsx</p>
+                            <p class="text-xs text-slate-500 mt-1" id="status-oracle">Waiting for file...</p>
                         </div>
                         
                         <!-- OMS File -->
@@ -157,8 +157,8 @@
                     
                     <div class="space-y-3 mb-6">
                         <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition">
-                            <input type="radio" name="scope" value="mls" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
-                            <span class="text-sm font-medium text-slate-700">MLS vs TMS Only</span>
+                            <input type="radio" name="scope" value="oracle" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-slate-700">Oracle vs TMS Only</span>
                         </label>
                         <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition">
                             <input type="radio" name="scope" value="oms" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
@@ -212,7 +212,7 @@
                     <!-- Tabs -->
                     <div class="flex border-b border-slate-200 px-2" id="tabs-container">
                         <button class="tab-btn active px-4 py-3 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600" data-target="tab-all">All Errors</button>
-                        <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-mls">MLS vs TMS</button>
+                        <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-oracle">Oracle vs TMS</button>
                         <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-oms">OMS vs TMS</button>
                     </div>
                     
@@ -255,17 +255,17 @@
         const AppState = {
             filesData: {
                 tms: { headers: {}, rows: [] },
-                mls: { headers: {}, rows: [] },
+                oracle: { headers: {}, rows: [] },
                 oms: { headers: {}, rows: [] }
             },
             cols: {
                 tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'M', pallet: 'Z', invStatus: 'AA', podStatus: 'AD', subdiv: null },
                 oms: { planDate: 'A', status: 'F', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
-                mls: { planDate: 'A', invoice: 'I', order: 'K', pallet: 'Y', invStatus: 'AA', podStatus: 'AD', div: null, subdiv: null }
+                oracle: { planDate: 'A', invoice: 'I', order: 'K', pallet: 'Y', invStatus: 'AA', podStatus: 'AD', div: null, subdiv: null }
             },
             results: {
                 allErrors: [],
-                mlsErrors: [],
+                oracleErrors: [],
                 omsErrors: [],
                 metrics: { total: 0, errors: 0 }
             },
@@ -320,7 +320,7 @@
         }
 
         // Helper to check and format field mismatches
-        function checkMismatch(fieldName, sVal, tVal, type = 'string') {
+        function checkMismatch(fieldName, sVal, tVal, type = 'string', sourceName = 'Sub') {
             let sNorm, tNorm, sDisp, tDisp;
             
             // Format for display (fallbacks)
@@ -368,7 +368,7 @@
             }
             
             if (sNorm !== tNorm) {
-                return `${fieldName} Mismatch (Sub: ${sDisp} vs TMS: ${tDisp})`;
+                return `${fieldName} Mismatch (${sourceName}: ${sDisp} vs TMS: ${tDisp})`;
             }
             return null;
         }
@@ -458,9 +458,9 @@
                     // Dynamically find Division/Subdivision columns where letters weren't explicitly provided
                     if (typeKey === 'tms') {
                         AppState.cols.tms.subdiv = findColKey(headers, ['subdivision', 'sub-div', 'sub div']);
-                    } else if (typeKey === 'mls') {
-                        AppState.cols.mls.div = findColKey(headers, ['division', 'div']);
-                        AppState.cols.mls.subdiv = findColKey(headers, ['subdivision', 'sub-div', 'sub div']);
+                    } else if (typeKey === 'oracle') {
+                        AppState.cols.oracle.div = findColKey(headers, ['division', 'div']);
+                        AppState.cols.oracle.subdiv = findColKey(headers, ['subdivision', 'sub-div', 'sub div']);
                     }
 
                     statusEl.innerHTML = `<span class="text-green-600 font-medium">Loaded (${dataRows.length} rows)</span>`;
@@ -477,7 +477,7 @@
         }
 
         setupFileHandling('file-tms', 'drop-tms', 'tms');
-        setupFileHandling('file-mls', 'drop-mls', 'mls');
+        setupFileHandling('file-oracle', 'drop-oracle', 'oracle');
         setupFileHandling('file-oms', 'drop-oms', 'oms');
 
         document.getElementById('btn-run').addEventListener('click', () => {
@@ -487,8 +487,8 @@
                 showToast("The Main TMS file (DailyDispatchReport_TMS.xlsx) is strictly required.", "error");
                 return;
             }
-            if ((scope === 'mls' || scope === 'both') && !AppState.filesData.mls.rows.length) {
-                showToast("MLS DDR Main file is required for the selected scope.", "error");
+            if ((scope === 'oracle' || scope === 'both') && !AppState.filesData.oracle.rows.length) {
+                showToast("Oracle DDR Main file is required for the selected scope.", "error");
                 return;
             }
             if ((scope === 'oms' || scope === 'both') && !AppState.filesData.oms.rows.length) {
@@ -501,22 +501,19 @@
 
         function runValidationEngine(scope) {
             AppState.results.allErrors = [];
-            AppState.results.mlsErrors = [];
+            AppState.results.oracleErrors = [];
             AppState.results.omsErrors = [];
             let totalProcessed = 0;
             
             const tmsData = AppState.filesData.tms.rows;
 
-            // 1. Validate MLS vs TMS
-            if (scope === 'mls' || scope === 'both') {
-                const rawMls = AppState.filesData.mls.rows;
+            // 1. Validate Oracle vs TMS
+            if (scope === 'oracle' || scope === 'both') {
+                const rawOracle = AppState.filesData.oracle.rows;
                 
-                // Process ALL divisions & orders in MLS DDR Main
-                const mlsData = rawMls;
-
-                totalProcessed += mlsData.length;
-                const errors = compareDatasets(mlsData, tmsData, 'MLS');
-                AppState.results.mlsErrors = errors;
+                totalProcessed += rawOracle.length;
+                const errors = compareDatasets(rawOracle, tmsData, 'Oracle');
+                AppState.results.oracleErrors = errors;
                 AppState.results.allErrors.push(...errors);
             }
 
@@ -568,19 +565,18 @@
                         errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in TMS)`, null, tRow, order));
                     } else if (sRow && tRow) {
                         // Both exist, validate all relevant fields comprehensively
-                        let rowMismatches = [];
                         
                         // 1. Plan Date Check
-                        let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], tRow[cTms.planDate], 'date');
-                        if (pdErr) rowMismatches.push(pdErr);
+                        let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], tRow[cTms.planDate], 'date', sourceName);
+                        if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, tRow, order));
                         
                         // 2. Invoice Number Check
-                        let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], tRow[cTms.invoice], 'string');
-                        if (invErr) rowMismatches.push(invErr);
+                        let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], tRow[cTms.invoice], 'string', sourceName);
+                        if (invErr) errors.push(createErrorObj(sourceName, invErr, sRow, tRow, order));
                         
                         // 3. Pallet Count Check
-                        let palErr = checkMismatch('Pallets', sRow[cSub.pallet], tRow[cTms.pallet], 'number');
-                        if (palErr) rowMismatches.push(palErr);
+                        let palErr = checkMismatch('Pallets', sRow[cSub.pallet], tRow[cTms.pallet], 'number', sourceName);
+                        if (palErr) errors.push(createErrorObj(sourceName, palErr, sRow, tRow, order));
                         
                         // 4. Invoice Status Check (With OMS Mapping Logic)
                         if (cSub.invStatus) {
@@ -594,15 +590,15 @@
                                 else if (v === 'fully delivered' || v === 'partially delivered') sInvStatus = 'received';
                             }
                             
-                            let invStErr = checkMismatch('Invoice Status', sInvStatus, tRow[cTms.invStatus], 'string');
+                            let invStErr = checkMismatch('Invoice Status', sInvStatus, tRow[cTms.invStatus], 'string', sourceName);
                             
                             // Restore original text for the error display if a mapping was applied
                             if (invStErr && sInvOriginal !== sInvStatus) {
                                 let dispMapped = (sInvStatus === null || sInvStatus === undefined || sInvStatus === '') ? 'Empty' : sInvStatus;
                                 let dispOrig = (sInvOriginal === null || sInvOriginal === undefined || sInvOriginal === '') ? 'Empty' : sInvOriginal;
-                                invStErr = invStErr.replace(`Sub: ${dispMapped}`, `Sub: ${dispOrig}`);
+                                invStErr = invStErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
                             }
-                            if (invStErr) rowMismatches.push(invStErr);
+                            if (invStErr) errors.push(createErrorObj(sourceName, invStErr, sRow, tRow, order));
                         }
                         
                         // 5. POD Status Check (With OMS Mapping Logic)
@@ -618,26 +614,21 @@
                                 else if (v === 'confirmed by destination') sPodStatus = ''; // maps to blank
                             }
 
-                            let podErr = checkMismatch('POD Status', sPodStatus, tRow[cTms.podStatus], 'string');
+                            let podErr = checkMismatch('POD Status', sPodStatus, tRow[cTms.podStatus], 'string', sourceName);
 
                             // Restore original text for the error display if a mapping was applied
                             if (podErr && sPodOriginal !== sPodStatus) {
                                 let dispMapped = (sPodStatus === null || sPodStatus === undefined || sPodStatus === '') ? 'Empty' : sPodStatus;
                                 let dispOrig = (sPodOriginal === null || sPodOriginal === undefined || sPodOriginal === '') ? 'Empty' : sPodOriginal;
-                                podErr = podErr.replace(`Sub: ${dispMapped}`, `Sub: ${dispOrig}`);
+                                podErr = podErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
                             }
-                            if (podErr) rowMismatches.push(podErr);
+                            if (podErr) errors.push(createErrorObj(sourceName, podErr, sRow, tRow, order));
                         }
 
                         // 6. Overall Status Check (OMS Only)
                         if (sourceName === 'OMS' && cSub.status) {
-                            let stErr = checkMismatch('Status', sRow[cSub.status], tRow[cTms.status], 'string');
-                            if (stErr) rowMismatches.push(stErr);
-                        }
-                        
-                        // If any mismatches found, log them individually so they appear on separate rows and sheets
-                        for (let rm = 0; rm < rowMismatches.length; rm++) {
-                            errors.push(createErrorObj(sourceName, rowMismatches[rm], sRow, tRow, order));
+                            let stErr = checkMismatch('Status', sRow[cSub.status], tRow[cTms.status], 'string', sourceName);
+                            if (stErr) errors.push(createErrorObj(sourceName, stErr, sRow, tRow, order));
                         }
                     }
                 }
@@ -655,8 +646,8 @@
                     
                     let belongsToScope = false;
 
-                    if (sourceName === 'MLS') {
-                        belongsToScope = true; // MLS covers all divisions
+                    if (sourceName === 'Oracle') {
+                        belongsToScope = true; // Oracle covers all divisions
                     } else if (sourceName === 'OMS') {
                         if (!tSubDiv.includes('innovativehokair') && !tSubDiv.includes('mars3pl')) belongsToScope = true;
                     }
@@ -742,7 +733,7 @@
 
             let dataToRender = [];
             if (AppState.currentTab === 'tab-all') dataToRender = AppState.results.allErrors;
-            else if (AppState.currentTab === 'tab-mls') dataToRender = AppState.results.mlsErrors;
+            else if (AppState.currentTab === 'tab-oracle') dataToRender = AppState.results.oracleErrors;
             else if (AppState.currentTab === 'tab-oms') dataToRender = AppState.results.omsErrors;
 
             if (dataToRender.length === 0) {
@@ -769,8 +760,8 @@
                     reasonBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300';
                 }
                 
-                let displayReason = err.errReason; // No longer need to replace pipes, as they are separate rows now
-                // Clean up N/A for MLS view
+                let displayReason = err.errReason; 
+                // Clean up N/A for Oracle view
                 let subStatusDisp = err.subStatus && err.subStatus !== 'N/A' ? err.subStatus : '-';
 
                 row.innerHTML = `
@@ -840,17 +831,18 @@
                         { header: 'Order Number', key: 'm_orderNo', width: 18 }
                     ];
 
-                    // Dynamically exclude Sub. Status column for MLS since they don't have one
-                    if (!sheetName.includes('MLS')) {
-                        sheetColumns.push({ header: 'Sub. Status', key: 'm_subStatus', width: 15 });
+                    // Dynamically exclude Sub. Status column for Oracle since they don't have one
+                    if (!sheetName.includes('Oracle')) {
+                        sheetColumns.push({ header: 'OMS Status', key: 'm_subStatus', width: 15 });
                     }
 
                     sheetColumns.push(
                         { header: 'TMS Status', key: 'm_tmsStatus', width: 15 },
                         { header: 'Plan Date', key: 'm_planDate', width: 15 },
                         { header: 'Invoice Number', key: 'm_invNo', width: 18 },
-                        { header: 'Sub. Pallet No', key: 'm_pallet', width: 15 },
+                        { header: sheetName.includes('Oracle') ? 'Oracle Pallet No' : 'OMS Pallet No', key: 'm_pallet', width: 15 },
                         { header: 'TMS Pallet No', key: 'm_tmsPallet', width: 15 },
+                        { header: 'Diff', key: 'm_diff', width: 10 },
                         { header: '| ORIGINAL DATA |', key: 'm_sep', width: 18 }
                     );
 
@@ -871,6 +863,12 @@
 
                     // 2. Add Rows
                     dataList.forEach(item => {
+                        
+                        // Calculate Diff strictly for numeric pallet values
+                        let p1 = parseFloat(item.meta.pallet);
+                        let p2 = parseFloat(item.meta.tmsPallet);
+                        let diffVal = (!isNaN(p1) && !isNaN(p2)) ? (p1 - p2) : '';
+
                         let rowData = {
                             m_errReason: item.meta.errReason,
                             m_source: item.meta.source,
@@ -881,6 +879,7 @@
                             m_invNo: item.meta.invNo,
                             m_pallet: item.meta.pallet,
                             m_tmsPallet: item.meta.tmsPallet,
+                            m_diff: diffVal,
                             m_sep: '---->'
                         };
                         
