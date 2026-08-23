@@ -550,8 +550,32 @@
                 let sList = subGroups[orderKey];
                 let tList = tmsGroups[orderKey] || [];
 
-                sList.sort((a, b) => multiSort(a, b, cSub));
-                tList.sort((a, b) => multiSort(a, b, cTms));
+                // Smart Sorting to align rows by mapped statuses (Crucial for OMS timing differences)
+                const getMappedOmsStatus = (val) => {
+                    let v = String(val || '').toLowerCase().trim();
+                    if (v === 'in transit') return 'delivered';
+                    if (v === 'redelivery') return 'returned';
+                    if (v === 'awaiting customer feedback') return 'assigned';
+                    return v;
+                };
+
+                sList.sort((a, b) => {
+                    if (sourceName === 'OMS') {
+                        let stA = getMappedOmsStatus(a[cSub.status]);
+                        let stB = getMappedOmsStatus(b[cSub.status]);
+                        if (stA !== stB) return stA > stB ? 1 : -1;
+                    }
+                    return multiSort(a, b, cSub);
+                });
+
+                tList.sort((a, b) => {
+                    if (sourceName === 'OMS') {
+                        let stA = String(a[cTms.status] || '').toLowerCase().trim();
+                        let stB = String(b[cTms.status] || '').toLowerCase().trim();
+                        if (stA !== stB) return stA > stB ? 1 : -1;
+                    }
+                    return multiSort(a, b, cTms);
+                });
 
                 let maxLen = Math.max(sList.length, tList.length);
                 
@@ -637,7 +661,22 @@
 
                         // 6. Overall Status Check (OMS Only)
                         if (sourceName === 'OMS' && cSub.status) {
-                            let stErr = checkMismatch('Status', sRow[cSub.status], tRow[cTms.status], 'string', sourceName);
+                            let rawOms = sRow[cSub.status];
+                            let mappedOms = rawOms;
+                            
+                            let v = String(rawOms || '').toLowerCase().trim();
+                            if (v === 'in transit') mappedOms = 'Delivered';
+                            else if (v === 'redelivery') mappedOms = 'Returned';
+                            else if (v === 'awaiting customer feedback') mappedOms = 'Assigned';
+
+                            let stErr = checkMismatch('Status', mappedOms, tRow[cTms.status], 'string', sourceName);
+                            
+                            if (stErr && rawOms !== mappedOms) {
+                                let dispMapped = (mappedOms === null || mappedOms === undefined || mappedOms === '') ? 'Empty' : mappedOms;
+                                let dispOrig = (rawOms === null || rawOms === undefined || rawOms === '') ? 'Empty' : rawOms;
+                                stErr = stErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
+                            }
+
                             if (stErr) errors.push(createErrorObj(sourceName, stErr, sRow, tRow, orderKey));
                         }
                     }
