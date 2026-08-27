@@ -155,18 +155,22 @@
                         <i class="fa-solid fa-sliders text-indigo-500 mr-2"></i> 2. Validation Scope
                     </h2>
                     
-                    <div class="space-y-3 mb-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
                         <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition">
                             <input type="radio" name="scope" value="oracle" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
-                            <span class="text-sm font-medium text-slate-700">Oracle vs TMS Only</span>
+                            <span class="text-sm font-medium text-slate-700">Oracle vs TMS</span>
                         </label>
                         <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition">
                             <input type="radio" name="scope" value="oms" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
-                            <span class="text-sm font-medium text-slate-700">OMS vs TMS Only</span>
+                            <span class="text-sm font-medium text-slate-700">OMS vs TMS</span>
+                        </label>
+                        <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition">
+                            <input type="radio" name="scope" value="oracle_oms" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-slate-700">Oracle vs OMS</span>
                         </label>
                         <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition border-indigo-200 bg-indigo-50">
                             <input type="radio" name="scope" value="both" checked class="h-4 w-4 text-indigo-600 focus:ring-indigo-500">
-                            <span class="text-sm font-medium text-slate-900">Compare Both vs TMS</span>
+                            <span class="text-sm font-medium text-slate-900">Run All vs TMS</span>
                         </label>
                     </div>
                     
@@ -210,10 +214,11 @@
                     </div>
                     
                     <!-- Tabs -->
-                    <div class="flex border-b border-slate-200 px-2" id="tabs-container">
+                    <div class="flex border-b border-slate-200 px-2 overflow-x-auto whitespace-nowrap" id="tabs-container">
                         <button class="tab-btn active px-4 py-3 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600" data-target="tab-all">All Errors</button>
                         <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-oracle">Oracle vs TMS</button>
                         <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-oms">OMS vs TMS</button>
+                        <button class="tab-btn px-4 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent" data-target="tab-oracle-oms">Oracle vs OMS</button>
                     </div>
                     
                     <!-- Table Container -->
@@ -224,8 +229,8 @@
                                     <th class="p-3 font-semibold text-slate-600 border-b">Source</th>
                                     <th class="p-3 font-semibold text-slate-600 border-b">Order Number</th>
                                     <th class="p-3 font-semibold text-slate-600 border-b">Error Reason</th>
-                                    <th class="p-3 font-semibold text-slate-600 border-b">Oracle/OMS Status</th>
-                                    <th class="p-3 font-semibold text-slate-600 border-b">TMS Status</th>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">Source Status</th>
+                                    <th class="p-3 font-semibold text-slate-600 border-b">Target Status</th>
                                     <th class="p-3 font-semibold text-slate-600 border-b">Plan Date</th>
                                 </tr>
                             </thead>
@@ -267,6 +272,7 @@
                 allErrors: [],
                 oracleErrors: [],
                 omsErrors: [],
+                oracleOmsErrors: [],
                 metrics: { total: 0, errors: 0 }
             },
             currentTab: 'tab-all'
@@ -302,13 +308,66 @@
             }, 4000);
         }
 
+        // --- NEW CRITICAL FUNCTION: Safely Parse all Date Variants ---
+        function parseDateSafely(val, sourceName = '') {
+            if (val === null || val === undefined || val === '') return null;
+            
+            let d = null;
+            // 1. Handling pre-parsed Date objects from SheetJS
+            if (val instanceof Date) {
+                if (!isNaN(val.getTime())) {
+                    d = new Date(val.getFullYear(), val.getMonth(), val.getDate());
+                }
+            }
+            // 2. Handling text string dates
+            else if (typeof val === 'string') {
+                let s = val.trim();
+                
+                let isoMatch = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+                if (isoMatch) {
+                    d = new Date(parseInt(isoMatch[1], 10), parseInt(isoMatch[2], 10) - 1, parseInt(isoMatch[3], 10));
+                } else {
+                    const monthMap = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+                    let mmmMatch = s.match(/^(\d{1,2})[-\/\s]([a-zA-Z]{3,})[-\/\s](\d{2,4})/);
+                    if (mmmMatch) {
+                        let year = parseInt(mmmMatch[3], 10);
+                        if (year < 100) year += 2000;
+                        let month = monthMap[mmmMatch[2].substring(0, 3).toLowerCase()];
+                        if (month !== undefined) {
+                            d = new Date(year, month, parseInt(mmmMatch[1], 10));
+                        }
+                    } else {
+                        let tempD = new Date(s);
+                        if (!isNaN(tempD.getTime())) {
+                            d = new Date(tempD.getFullYear(), tempD.getMonth(), tempD.getDate());
+                        }
+                    }
+                }
+            }
+            // 3. Handling numeric Excel serial dates (Safe range check to avoid corrupting Order IDs)
+            else if (typeof val === 'number') {
+                if (val > 35000 && val < 60000) {
+                    let utcDate = new Date((val - 25569) * 86400 * 1000);
+                    d = new Date(utcDate.getUTCFullYear(), utcDate.getUTCMonth(), utcDate.getUTCDate());
+                }
+            }
+
+            // USER EXPLICIT OVERRIDE: Oracle and OMS Master Data dates are exactly 1 day behind when exported.
+            if (d !== null && (sourceName === 'Oracle' || sourceName === 'OMS')) {
+                d.setDate(d.getDate() + 1);
+            }
+            
+            return d;
+        }
+
         // Format JS Date to d-mmm-yyyy for HTML UI
-        function formatDateForUI(val) {
-            if (val instanceof Date && !isNaN(val)) {
-                const d = val.getDate();
-                const m = val.toLocaleString('default', { month: 'short' });
-                const y = val.getFullYear();
-                return `${d}-${m}-${y}`;
+        function formatDateForUI(val, sourceName = '') {
+            let d = parseDateSafely(val, sourceName);
+            if (d instanceof Date && !isNaN(d)) {
+                const day = d.getDate();
+                const m = d.toLocaleString('default', { month: 'short' });
+                const y = d.getFullYear();
+                return `${day}-${m}-${y}`;
             }
             return val || '-';
         }
@@ -320,7 +379,7 @@
         }
 
         // Helper to check and format field mismatches
-        function checkMismatch(fieldName, sVal, tVal, type = 'string', sourceName = 'Oracle') {
+        function checkMismatch(fieldName, sVal, tVal, type = 'string', sourceName = 'Oracle', baseName = 'TMS') {
             let sNorm, tNorm, sDisp, tDisp;
             
             // Format for display (fallbacks)
@@ -328,17 +387,18 @@
             tDisp = (tVal === null || tVal === undefined || tVal === '') ? 'Empty' : tVal;
 
             if (type === 'date') {
-                // Smart Date Normalization
-                let dS = new Date(sVal);
-                let dT = new Date(tVal);
-                let isValidS = sVal !== null && sVal !== '' && !isNaN(dS.getTime());
-                let isValidT = tVal !== null && tVal !== '' && !isNaN(dT.getTime());
+                // Smart Date Normalization with Source specific +1 Day shift
+                let dS = parseDateSafely(sVal, sourceName);
+                let dT = parseDateSafely(tVal, baseName); 
                 
-                // Update display strings to cleanly formatted dates if valid
-                sDisp = isValidS ? formatDateForUI(dS) : sDisp;
-                tDisp = isValidT ? formatDateForUI(dT) : tDisp;
+                let isValidS = dS !== null;
+                let isValidT = dT !== null;
+                
+                // Update display strings cleanly (pass empty source to avoid double shift)
+                sDisp = isValidS ? formatDateForUI(dS, '') : sDisp;
+                tDisp = isValidT ? formatDateForUI(dT, '') : tDisp;
 
-                if (isValidS && isValidT && (formatDateForUI(dS) === formatDateForUI(dT))) {
+                if (isValidS && isValidT && (sDisp === tDisp)) {
                     // Force a match if they resolve to the exact same calendar day
                     sNorm = 1; 
                     tNorm = 1; 
@@ -353,14 +413,12 @@
                 sNorm = isNaN(nS) ? normStr(sVal) : nS;
                 tNorm = isNaN(nT) ? normStr(tVal) : nT;
             } else {
-                // Flexible String Matching (e.g., "HOLD_MLS" === "MLS Hold")
+                // Flexible String Matching
                 const flexNorm = (v) => {
                     if (v === null || v === undefined) return '';
                     let str = v.toString().toLowerCase().trim();
-                    if (str === 'blank') return ''; // Treat literal text "blank" as an empty cell
-                    // Replace non-alphanumeric chars (like underscores) with space
+                    if (str === 'blank') return ''; 
                     let cleaned = str.replace(/[^a-z0-9]/g, ' ');
-                    // Tokenize words, sort them alphabetically, and smash together
                     return cleaned.split(/\s+/).filter(t => t.length > 0).sort().join('');
                 };
                 sNorm = flexNorm(sVal);
@@ -368,7 +426,7 @@
             }
             
             if (sNorm !== tNorm) {
-                return `${fieldName} Mismatch (${sourceName}: ${sDisp} vs TMS: ${tDisp})`;
+                return `${fieldName} Mismatch (${sourceName}: ${sDisp} vs ${baseName}: ${tDisp})`;
             }
             return null;
         }
@@ -386,18 +444,29 @@
         }
 
         // Multi-level sort to sequence duplicates safely
-        function multiSort(a, b, colsObj) {
-            let pdA = String(a[colsObj.planDate] || '');
-            let pdB = String(b[colsObj.planDate] || '');
-            if (pdA !== pdB) return pdA > pdB ? 1 : -1;
+        function multiSort(a, b, colsObj, sourceName = '') {
+            let dA = parseDateSafely(a[colsObj.planDate], sourceName);
+            let dB = parseDateSafely(b[colsObj.planDate], sourceName);
+            
+            let tA = dA ? dA.getTime() : String(a[colsObj.planDate] || '');
+            let tB = dB ? dB.getTime() : String(b[colsObj.planDate] || '');
+
+            if (tA !== tB) {
+                if (typeof tA === 'number' && typeof tB === 'number') return tA - tB;
+                return tA > tB ? 1 : -1;
+            }
 
             let invA = String(a[colsObj.invoice] || '');
             let invB = String(b[colsObj.invoice] || '');
             if (invA !== invB) return invA > invB ? 1 : -1;
 
-            let palA = String(a[colsObj.pallet] || '');
-            let palB = String(b[colsObj.pallet] || '');
-            if (palA !== palB) return palA > palB ? 1 : -1;
+            let palA = parseFloat(a[colsObj.pallet]) || 0;
+            let palB = parseFloat(b[colsObj.pallet]) || 0;
+            if (palA !== palB) return palA - palB;
+
+            let stA = String(a[colsObj.status] || '');
+            let stB = String(b[colsObj.status] || '');
+            if (stA !== stB) return stA > stB ? 1 : -1;
 
             return 0;
         }
@@ -483,15 +552,15 @@
         document.getElementById('btn-run').addEventListener('click', () => {
             const scope = document.querySelector('input[name="scope"]:checked').value;
             
-            if (!AppState.filesData.tms.rows.length) {
+            if (scope !== 'oracle_oms' && !AppState.filesData.tms.rows.length) {
                 showToast("The Main TMS file (DailyDispatchReport_TMS.xlsx) is strictly required.", "error");
                 return;
             }
-            if ((scope === 'oracle' || scope === 'both') && !AppState.filesData.oracle.rows.length) {
+            if ((scope === 'oracle' || scope === 'both' || scope === 'oracle_oms') && !AppState.filesData.oracle.rows.length) {
                 showToast("Oracle DDR Main file is required for the selected scope.", "error");
                 return;
             }
-            if ((scope === 'oms' || scope === 'both') && !AppState.filesData.oms.rows.length) {
+            if ((scope === 'oms' || scope === 'both' || scope === 'oracle_oms') && !AppState.filesData.oms.rows.length) {
                 showToast("OMS DDR file is required for the selected scope.", "error");
                 return;
             }
@@ -503,27 +572,33 @@
             AppState.results.allErrors = [];
             AppState.results.oracleErrors = [];
             AppState.results.omsErrors = [];
+            AppState.results.oracleOmsErrors = [];
             let totalProcessed = 0;
             
             const tmsData = AppState.filesData.tms.rows;
 
-            // 1. Validate Oracle vs TMS
             if (scope === 'oracle' || scope === 'both') {
                 const rawOracle = AppState.filesData.oracle.rows;
-                
                 totalProcessed += rawOracle.length;
-                const errors = compareDatasets(rawOracle, tmsData, 'Oracle');
+                const errors = compareDatasets(rawOracle, tmsData, 'Oracle', 'TMS');
                 AppState.results.oracleErrors = errors;
                 AppState.results.allErrors.push(...errors);
             }
 
-            // 2. Validate OMS vs TMS
             if (scope === 'oms' || scope === 'both') {
                 const omsData = AppState.filesData.oms.rows;
                 totalProcessed += omsData.length;
-                
-                const errors = compareDatasets(omsData, tmsData, 'OMS');
+                const errors = compareDatasets(omsData, tmsData, 'OMS', 'TMS');
                 AppState.results.omsErrors = errors;
+                AppState.results.allErrors.push(...errors);
+            }
+
+            if (scope === 'oracle_oms') {
+                const rawOracle = AppState.filesData.oracle.rows;
+                const omsData = AppState.filesData.oms.rows;
+                totalProcessed += rawOracle.length;
+                const errors = compareDatasets(rawOracle, omsData, 'Oracle', 'OMS');
+                AppState.results.oracleOmsErrors = errors;
                 AppState.results.allErrors.push(...errors);
             }
 
@@ -534,194 +609,213 @@
             showToast("Validation completed successfully.", "success");
         }
 
-        function compareDatasets(subData, tmsData, sourceName) {
+        function compareDatasets(subData, baseData, sourceName, baseName = 'TMS') {
             let errors = [];
             let cSub = AppState.cols[sourceName.toLowerCase()];
-            let cTms = AppState.cols.tms;
+            let cBase = AppState.cols[baseName.toLowerCase()];
 
-            // FIX: Normalize the Order Number to handle Excel spaces or Number vs String formatting
             let subGroups = groupBy(subData, row => normStr(row[cSub.order]));
-            let tmsGroups = groupBy(tmsData, row => normStr(row[cTms.order]));
+            let baseGroups = groupBy(baseData, row => normStr(row[cBase.order]));
 
-            // Phase 1: Check orders present in Subsidiary
+            const compScope = `${sourceName}_${baseName}`;
+
+            const getMappedOmsStatus = (val) => {
+                let v = String(val || '').toLowerCase().trim();
+                if (v === 'in transit') return 'delivered';
+                if (v === 'redelivery') return 'returned';
+                if (v === 'awaiting customer feedback') return 'assigned';
+                return v;
+            };
+
+            const mapInvStatus = (v, src) => {
+                if (v === null || v === undefined) v = '';
+                let str = String(v).toLowerCase().trim();
+                
+                // Specific Mappings exclusively for Oracle vs OMS
+                if (compScope === 'Oracle_OMS') {
+                    if (src === 'Oracle') {
+                        if (str === '' || str === 'missing') return 'missing';
+                        return v;
+                    }
+                    if (src === 'OMS') {
+                        if (str === 'not delivered') return 'not received';
+                        if (str === 'fully delivered' || str === 'delivered' || str === 'partially delivered') return 'received';
+                        if (str === '') return 'missing';
+                        return v;
+                    }
+                } 
+                // Standard Mappings when comparing against TMS
+                else {
+                    if (src === 'OMS') {
+                        if (str === 'not dispatched' || str === 'not delivered') return 'not received';
+                        if (str === 'fully delivered' || str === 'partially delivered') return 'received';
+                        return v;
+                    }
+                }
+                return v;
+            };
+
+            const mapPodStatus = (v, src) => {
+                if (src !== 'OMS') return v;
+                let str = String(v || '').toLowerCase().trim();
+                if (str === 'pending by mls') return 'mls hold';
+                if (str === 'pending by customer') return 'hold';
+                if (str === 'confirmed by destination') return ''; 
+                return v;
+            };
+
             for (let orderKey in subGroups) {
                 if (!orderKey) continue;
 
                 let sList = subGroups[orderKey];
-                let tList = tmsGroups[orderKey] || [];
+                let bList = baseGroups[orderKey] || [];
 
-                // Smart Sorting to align rows by mapped statuses (Crucial for OMS timing differences)
-                const getMappedOmsStatus = (val) => {
-                    let v = String(val || '').toLowerCase().trim();
-                    if (v === 'in transit') return 'delivered';
-                    if (v === 'redelivery') return 'returned';
-                    if (v === 'awaiting customer feedback') return 'assigned';
-                    return v;
-                };
+                // Strictly sort chronologically first (by Date -> Inv -> Pallets) to align identical transactions
+                sList.sort((a, b) => multiSort(a, b, cSub, sourceName));
+                bList.sort((a, b) => multiSort(a, b, cBase, baseName));
 
-                sList.sort((a, b) => {
-                    if (sourceName === 'OMS') {
-                        let stA = getMappedOmsStatus(a[cSub.status]);
-                        let stB = getMappedOmsStatus(b[cSub.status]);
-                        if (stA !== stB) return stA > stB ? 1 : -1;
-                    }
-                    return multiSort(a, b, cSub);
-                });
-
-                tList.sort((a, b) => {
-                    if (sourceName === 'OMS') {
-                        let stA = String(a[cTms.status] || '').toLowerCase().trim();
-                        let stB = String(b[cTms.status] || '').toLowerCase().trim();
-                        if (stA !== stB) return stA > stB ? 1 : -1;
-                    }
-                    return multiSort(a, b, cTms);
-                });
-
-                let maxLen = Math.max(sList.length, tList.length);
+                let maxLen = Math.max(sList.length, bList.length);
                 
-                // Calculate total pallets for the order to handle distributed/duplicate pallets correctly
                 let sumSubPallets = sList.reduce((sum, r) => sum + (parseFloat(r[cSub.pallet]) || 0), 0);
-                let sumTmsPallets = tList.reduce((sum, r) => sum + (parseFloat(r[cTms.pallet]) || 0), 0);
-                // Allow a tiny margin for float precision errors
-                let isPalletSumMatch = Math.abs(sumSubPallets - sumTmsPallets) < 0.0001;
+                let sumBasePallets = bList.reduce((sum, r) => sum + (parseFloat(r[cBase.pallet]) || 0), 0);
+                let isPalletSumMatch = Math.abs(sumSubPallets - sumBasePallets) < 0.0001;
                 
                 for (let i = 0; i < maxLen; i++) {
                     let sRow = sList[i];
-                    let tRow = tList[i];
+                    let bRow = bList[i];
 
-                    if (sRow && !tRow) {
-                        errors.push(createErrorObj(sourceName, `Missing in TMS (Extra count in ${sourceName})`, sRow, null, orderKey));
-                    } else if (!sRow && tRow) {
-                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in TMS)`, null, tRow, orderKey));
-                    } else if (sRow && tRow) {
-                        // Both exist, validate all relevant fields comprehensively
+                    if (sRow && !bRow) {
+                        errors.push(createErrorObj(sourceName, `Missing in ${baseName} (Extra count in ${sourceName})`, sRow, null, orderKey, baseName));
+                    } else if (!sRow && bRow) {
+                        errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in ${baseName})`, null, bRow, orderKey, baseName));
+                    } else if (sRow && bRow) {
                         
-                        // 1. Plan Date Check (Skipped for OMS per requirements)
+                        // 1. Plan Date Check
                         if (sourceName !== 'OMS') {
-                            let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], tRow[cTms.planDate], 'date', sourceName);
-                            if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, tRow, orderKey));
+                            let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], bRow[cBase.planDate], 'date', sourceName, baseName);
+                            if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, bRow, orderKey, baseName));
                         }
                         
                         // 2. Invoice Number Check
-                        let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], tRow[cTms.invoice], 'string', sourceName);
-                        if (invErr) errors.push(createErrorObj(sourceName, invErr, sRow, tRow, orderKey));
+                        let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], bRow[cBase.invoice], 'string', sourceName, baseName);
+                        if (invErr) errors.push(createErrorObj(sourceName, invErr, sRow, bRow, orderKey, baseName));
                         
-                        // 3. Pallet Count Check (Sum-based override for duplicate orders)
+                        // 3. Pallet Count Check 
                         if (!isPalletSumMatch) {
-                            let palErr = checkMismatch('Pallets', sRow[cSub.pallet], tRow[cTms.pallet], 'number', sourceName);
-                            if (palErr) errors.push(createErrorObj(sourceName, palErr, sRow, tRow, orderKey));
+                            let palErr = checkMismatch('Pallets', sRow[cSub.pallet], bRow[cBase.pallet], 'number', sourceName, baseName);
+                            if (palErr) errors.push(createErrorObj(sourceName, palErr, sRow, bRow, orderKey, baseName));
                         }
                         
-                        // 4. Invoice Status Check (With OMS Mapping Logic)
-                        if (cSub.invStatus) {
+                        // 4. Invoice Status Check
+                        if (cSub.invStatus && cBase.invStatus) {
                             let sInvOriginal = sRow[cSub.invStatus];
-                            let sInvStatus = sInvOriginal;
+                            let bInvOriginal = bRow[cBase.invStatus];
                             
-                            // Map OMS terminology to TMS terminology for accurate matching
-                            if (sourceName === 'OMS') {
-                                let v = String(sInvOriginal || '').toLowerCase().trim();
-                                if (v === 'not dispatched' || v === 'not delivered') sInvStatus = 'not received';
-                                else if (v === 'fully delivered' || v === 'partially delivered') sInvStatus = 'received';
+                            let sInvStatus = mapInvStatus(sInvOriginal, sourceName);
+                            let bInvStatus = mapInvStatus(bInvOriginal, baseName);
+                            
+                            let invStErr = checkMismatch('Invoice Status', sInvStatus, bInvStatus, 'string', sourceName, baseName);
+                            
+                            // --- NEW: Strict Many-to-Many Equivalence Check for Oracle vs OMS ---
+                            if (invStErr && compScope === 'Oracle_OMS') {
+                                let oStr = String(sInvOriginal || '').toLowerCase().trim();
+                                let mStr = String(bInvOriginal || '').toLowerCase().trim();
+                                let isEq = false;
+
+                                // Rule 1: Received matches Fully Delivered (or standard Delivered)
+                                if (oStr === 'received' && (mStr === 'fully delivered' || mStr === 'delivered' || mStr === 'partially delivered')) isEq = true;
+                                // Rule 2: Missing Invoice Status matches Empty
+                                else if (oStr === 'missing invoice status' && mStr === '') isEq = true;
+                                // Rule 3: Missing Invoice Status matches Not Delivered
+                                else if (oStr === 'missing invoice status' && mStr === 'not delivered') isEq = true;
+                                // Rule 4: Not Received matches Empty
+                                else if (oStr === 'not received' && mStr === '') isEq = true;
+                                // Rule 5: Fallback safety for Not Received
+                                else if (oStr === 'not received' && mStr === 'not delivered') isEq = true;
+
+                                // If they logically match based on your rules, clear the error
+                                if (isEq) invStErr = null;
                             }
                             
-                            let invStErr = checkMismatch('Invoice Status', sInvStatus, tRow[cTms.invStatus], 'string', sourceName);
-                            
-                            // Restore original text for the error display if a mapping was applied
-                            if (invStErr && sInvOriginal !== sInvStatus) {
-                                let dispMapped = (sInvStatus === null || sInvStatus === undefined || sInvStatus === '') ? 'Empty' : sInvStatus;
-                                let dispOrig = (sInvOriginal === null || sInvOriginal === undefined || sInvOriginal === '') ? 'Empty' : sInvOriginal;
-                                invStErr = invStErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
+                            if (invStErr) {
+                                // Restore originals for the error text if mapped
+                                if (sInvOriginal !== sInvStatus) invStErr = invStErr.replace(`${sourceName}: ${sInvStatus || 'Empty'}`, `${sourceName}: ${sInvOriginal || 'Empty'}`);
+                                if (bInvOriginal !== bInvStatus) invStErr = invStErr.replace(`${baseName}: ${bInvStatus || 'Empty'}`, `${baseName}: ${bInvOriginal || 'Empty'}`);
+                                errors.push(createErrorObj(sourceName, invStErr, sRow, bRow, orderKey, baseName));
                             }
-                            if (invStErr) errors.push(createErrorObj(sourceName, invStErr, sRow, tRow, orderKey));
                         }
                         
-                        // 5. POD Status Check (With OMS Mapping Logic)
-                        if (cSub.podStatus) {
+                        // 5. POD Status Check 
+                        if (cSub.podStatus && cBase.podStatus) {
                             let sPodOriginal = sRow[cSub.podStatus];
-                            let sPodStatus = sPodOriginal;
+                            let bPodOriginal = bRow[cBase.podStatus];
                             
-                            // Map OMS terminology to TMS terminology for accurate matching
-                            if (sourceName === 'OMS') {
-                                let v = String(sPodOriginal || '').toLowerCase().trim();
-                                if (v === 'pending by mls') sPodStatus = 'mls hold';
-                                else if (v === 'pending by customer') sPodStatus = 'hold';
-                                else if (v === 'confirmed by destination') sPodStatus = ''; // maps to blank
-                            }
+                            let sPodStatus = mapPodStatus(sPodOriginal, sourceName);
+                            let bPodStatus = mapPodStatus(bPodOriginal, baseName);
+                            
+                            let podErr = checkMismatch('POD Status', sPodStatus, bPodStatus, 'string', sourceName, baseName);
 
-                            let podErr = checkMismatch('POD Status', sPodStatus, tRow[cTms.podStatus], 'string', sourceName);
-
-                            // Restore original text for the error display if a mapping was applied
-                            if (podErr && sPodOriginal !== sPodStatus) {
-                                let dispMapped = (sPodStatus === null || sPodStatus === undefined || sPodStatus === '') ? 'Empty' : sPodStatus;
-                                let dispOrig = (sPodOriginal === null || sPodOriginal === undefined || sPodOriginal === '') ? 'Empty' : sPodOriginal;
-                                podErr = podErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
+                            if (podErr) {
+                                if (sPodOriginal !== sPodStatus) podErr = podErr.replace(`${sourceName}: ${sPodStatus || 'Empty'}`, `${sourceName}: ${sPodOriginal || 'Empty'}`);
+                                if (bPodOriginal !== bPodStatus) podErr = podErr.replace(`${baseName}: ${bPodStatus || 'Empty'}`, `${baseName}: ${bPodOriginal || 'Empty'}`);
+                                errors.push(createErrorObj(sourceName, podErr, sRow, bRow, orderKey, baseName));
                             }
-                            if (podErr) errors.push(createErrorObj(sourceName, podErr, sRow, tRow, orderKey));
                         }
 
-                        // 6. Overall Status Check (OMS Only)
-                        if (sourceName === 'OMS' && cSub.status) {
-                            let rawOms = sRow[cSub.status];
-                            let mappedOms = rawOms;
+                        // 6. Overall Status Check (Only if BOTH sources have a status column)
+                        if (cSub.status && cBase.status) {
+                            let sStOriginal = sRow[cSub.status];
+                            let bStOriginal = bRow[cBase.status];
                             
-                            let v = String(rawOms || '').toLowerCase().trim();
-                            if (v === 'in transit') mappedOms = 'Delivered';
-                            else if (v === 'redelivery') mappedOms = 'Returned';
-                            else if (v === 'awaiting customer feedback') mappedOms = 'Assigned';
+                            let sMapped = sourceName === 'OMS' ? getMappedOmsStatus(sStOriginal) : sStOriginal;
+                            let bMapped = baseName === 'OMS' ? getMappedOmsStatus(bStOriginal) : bStOriginal;
 
-                            let stErr = checkMismatch('Status', mappedOms, tRow[cTms.status], 'string', sourceName);
+                            let stErr = checkMismatch('Status', sMapped, bMapped, 'string', sourceName, baseName);
                             
-                            if (stErr && rawOms !== mappedOms) {
-                                let dispMapped = (mappedOms === null || mappedOms === undefined || mappedOms === '') ? 'Empty' : mappedOms;
-                                let dispOrig = (rawOms === null || rawOms === undefined || rawOms === '') ? 'Empty' : rawOms;
-                                stErr = stErr.replace(`${sourceName}: ${dispMapped}`, `${sourceName}: ${dispOrig}`);
+                            if (stErr) {
+                                if (sStOriginal !== sMapped) stErr = stErr.replace(`${sourceName}: ${sMapped || 'Empty'}`, `${sourceName}: ${sStOriginal || 'Empty'}`);
+                                if (bStOriginal !== bMapped) stErr = stErr.replace(`${baseName}: ${bMapped || 'Empty'}`, `${baseName}: ${bStOriginal || 'Empty'}`);
+                                errors.push(createErrorObj(sourceName, stErr, sRow, bRow, orderKey, baseName));
                             }
-
-                            if (stErr) errors.push(createErrorObj(sourceName, stErr, sRow, tRow, orderKey));
                         }
                     }
                 }
             }
 
-            // Phase 2: Check orders present in TMS but entirely missing in Subsidiary scope
-            for (let orderKey in tmsGroups) {
-                if (subGroups[orderKey]) continue; // Handled in Phase 1
+            for (let orderKey in baseGroups) {
+                if (subGroups[orderKey]) continue; 
 
-                let tList = tmsGroups[orderKey];
-                for (let i = 0; i < tList.length; i++) {
-                    let tRow = tList[i];
-                    
-                    // FIX: Removed strict subdivision filtering. If an order is in TMS but missing from the 
-                    // uploaded Oracle/OMS file, it MUST be captured regardless of the subdivision column data.
-                    errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Found in TMS)`, null, tRow, orderKey));
+                let bList = baseGroups[orderKey];
+                for (let i = 0; i < bList.length; i++) {
+                    let bRow = bList[i];
+                    errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Found in ${baseName})`, null, bRow, orderKey, baseName));
                 }
             }
 
             return errors;
         }
 
-        function createErrorObj(source, reason, sRow, tRow, orderNo) {
-            let refRow = sRow || tRow || {};
+        function createErrorObj(source, reason, sRow, bRow, orderNo, baseName) {
+            let refRow = sRow || bRow || {};
             let isSubRow = !!sRow;
             let cSub = AppState.cols[source.toLowerCase()];
-            let cTms = AppState.cols.tms;
+            let cBase = AppState.cols[baseName.toLowerCase()];
 
-            // Structure cleanly for export separation
             let errorMeta = {
                 errReason: reason,
                 source: source,
-                // FIX: Pull the original raw order number to retain Excel's original display formatting
-                orderNo: isSubRow ? refRow[cSub.order] : refRow[cTms.order],
+                baseName: baseName, // Store base name explicitly
+                orderNo: isSubRow ? refRow[cSub.order] : refRow[cBase.order],
                 subStatus: sRow && cSub.status ? sRow[cSub.status] : 'N/A',
-                tmsStatus: tRow ? tRow[cTms.status] : 'N/A',
-                planDate: isSubRow ? refRow[cSub.planDate] : refRow[cTms.planDate],
-                invNo: isSubRow ? refRow[cSub.invoice] : refRow[cTms.invoice],
-                pallet: isSubRow ? refRow[cSub.pallet] : (tRow ? tRow[cTms.pallet] : 'N/A'),
-                tmsPallet: tRow ? tRow[cTms.pallet] : 'N/A',
-                originalSource: isSubRow ? source : 'TMS'
+                baselineStatus: bRow && cBase.status ? bRow[cBase.status] : 'N/A',
+                planDate: isSubRow ? refRow[cSub.planDate] : refRow[cBase.planDate],
+                invNo: isSubRow ? refRow[cSub.invoice] : refRow[cBase.invoice],
+                pallet: isSubRow ? refRow[cSub.pallet] : (bRow ? bRow[cBase.pallet] : 'N/A'),
+                baselinePallet: bRow ? bRow[cBase.pallet] : 'N/A',
+                originalSource: isSubRow ? source : baseName
             };
 
-            let headersObj = isSubRow ? AppState.filesData[source.toLowerCase()].headers : AppState.filesData.tms.headers;
+            let headersObj = isSubRow ? AppState.filesData[source.toLowerCase()].headers : AppState.filesData[baseName.toLowerCase()].headers;
 
             return {
                 meta: errorMeta,
@@ -775,6 +869,7 @@
             if (AppState.currentTab === 'tab-all') dataToRender = AppState.results.allErrors;
             else if (AppState.currentTab === 'tab-oracle') dataToRender = AppState.results.oracleErrors;
             else if (AppState.currentTab === 'tab-oms') dataToRender = AppState.results.omsErrors;
+            else if (AppState.currentTab === 'tab-oracle-oms') dataToRender = AppState.results.oracleOmsErrors;
 
             if (dataToRender.length === 0) {
                 tbody.innerHTML = `
@@ -801,11 +896,11 @@
                 }
                 
                 let displayReason = err.errReason; 
-                // Clean up N/A for Oracle view
                 let subStatusDisp = err.subStatus && err.subStatus !== 'N/A' ? err.subStatus : '-';
+                let baseStatusDisp = err.baselineStatus && err.baselineStatus !== 'N/A' ? err.baselineStatus : '-';
 
                 row.innerHTML = `
-                    <td class="p-3 border-b text-slate-700 font-medium whitespace-nowrap">${err.source}</td>
+                    <td class="p-3 border-b text-slate-700 font-medium whitespace-nowrap">${err.source} vs ${err.baseName}</td>
                     <td class="p-3 border-b text-slate-800 font-semibold whitespace-nowrap">${err.orderNo || '-'}</td>
                     <td class="p-3 border-b max-w-xs">
                         <div class="px-2 py-1 text-xs font-medium rounded border ${reasonBadgeClass} leading-tight inline-block">
@@ -813,8 +908,8 @@
                         </div>
                     </td>
                     <td class="p-3 border-b text-slate-600 whitespace-nowrap">${subStatusDisp}</td>
-                    <td class="p-3 border-b text-slate-600 whitespace-nowrap">${err.tmsStatus}</td>
-                    <td class="p-3 border-b text-slate-500 whitespace-nowrap">${formatDateForUI(err.planDate)}</td>
+                    <td class="p-3 border-b text-slate-600 whitespace-nowrap">${baseStatusDisp}</td>
+                    <td class="p-3 border-b text-slate-500 whitespace-nowrap">${formatDateForUI(err.planDate, err.originalSource)}</td>
                 `;
                 tbody.appendChild(row);
             }
@@ -837,58 +932,226 @@
                 
                 const workbook = new ExcelJS.Workbook();
                 workbook.creator = 'MLS DDR Validation Dashboard';
-                
-                const createStyledSheet = (sheetName, dataList) => {
+
+                const normalizeDateForExcel = (val, sourceName) => {
+                    let d = parseDateSafely(val, sourceName);
+                    if (d) {
+                        return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                    }
+                    return val;
+                };
+
+                const buildSummarySheet = () => {
+                    const summarySheet = workbook.addWorksheet('Summary');
+                    
+                    // Helper to dynamically find Warehouse regardless of file
+                    const getWarehouse = (item) => {
+                        let wh = 'Unknown';
+                        const headers = item.headersObj || {};
+                        for (const [col, headerName] of Object.entries(headers)) {
+                            if (!headerName) continue;
+                            const lower = String(headerName).toLowerCase();
+                            if (lower.includes('warehouse') || lower.includes('branch') || lower.includes('site') || lower.includes('facility')) {
+                                wh = item.rawRow[col] || 'Unknown';
+                                break;
+                            }
+                        }
+                        return wh;
+                    };
+
+                    const summaryData = {}; 
+                    const allWarehouses = new Set();
+
+                    // Group errors by Scope, Reason, and Warehouse
+                    AppState.results.allErrors.forEach(item => {
+                        const scope = `${item.meta.source} vs ${item.meta.baseName}`;
+                        let reason = item.meta.errReason;
+                        
+                        // Refine phrasing for executive summary
+                        if (reason.includes(`Missing in ${item.meta.baseName}`)) reason = `Missing from ${item.meta.baseName} DDR (Found in ${item.meta.source})`;
+                        else if (reason.includes(`Missing in ${item.meta.source}`)) reason = `Missing from ${item.meta.source} DDR (Found in ${item.meta.baseName})`;
+                        else {
+                            let mismatchType = reason.split(' Mismatch')[0].trim();
+                            reason = `Data Mismatch: ${mismatchType}`;
+                        }
+
+                        const wh = getWarehouse(item);
+                        allWarehouses.add(wh);
+
+                        if (!summaryData[scope]) summaryData[scope] = {};
+                        if (!summaryData[scope][reason]) summaryData[scope][reason] = {};
+                        if (!summaryData[scope][reason][wh]) summaryData[scope][reason][wh] = 0;
+                        
+                        summaryData[scope][reason][wh]++;
+                    });
+
+                    const sortedWHs = Array.from(allWarehouses).sort();
+                    let currentRow = 1;
+
+                    // Main Title
+                    summarySheet.mergeCells(`A${currentRow}:E${currentRow}`);
+                    const titleCell = summarySheet.getCell(`A${currentRow}`);
+                    titleCell.value = 'Validation Executive Summary';
+                    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+                    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }; // Deep Slate Navy
+                    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    summarySheet.getRow(currentRow).height = 40;
+                    currentRow += 2;
+
+                    // Build Tables for each Scope
+                    for (const [scope, reasons] of Object.entries(summaryData)) {
+                        const scopeCell = summarySheet.getCell(`A${currentRow}`);
+                        scopeCell.value = scope;
+                        scopeCell.font = { bold: true, size: 14, underline: true, color: { argb: 'FF0F172A' } };
+                        currentRow++;
+
+                        // Header Row
+                        const headerRow = summarySheet.getRow(currentRow);
+                        headerRow.getCell(1).value = 'Remark';
+                        let colIdx = 2;
+                        sortedWHs.forEach(wh => {
+                            headerRow.getCell(colIdx).value = wh;
+                            colIdx++;
+                        });
+                        headerRow.getCell(colIdx).value = 'Grand Total';
+                        
+                        headerRow.eachCell((cell, cNum) => {
+                            if (cNum <= colIdx) {
+                                cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+                                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                            }
+                        });
+                        currentRow++;
+
+                        let grandTotalsByWh = {};
+                        sortedWHs.forEach(w => grandTotalsByWh[w] = 0);
+                        let absoluteTotal = 0;
+
+                        // Data Rows
+                        let isEven = false;
+                        for (const [reason, whCounts] of Object.entries(reasons)) {
+                            const row = summarySheet.getRow(currentRow);
+                            row.getCell(1).value = reason;
+                            row.getCell(1).alignment = { horizontal: 'left' };
+                            
+                            let rowTotal = 0;
+                            colIdx = 2;
+                            sortedWHs.forEach(wh => {
+                                const count = whCounts[wh] || 0;
+                                row.getCell(colIdx).value = count === 0 ? '-' : count;
+                                if (count > 0) row.getCell(colIdx).numFmt = '#,##0';
+                                row.getCell(colIdx).alignment = { horizontal: 'center' };
+                                rowTotal += count;
+                                grandTotalsByWh[wh] += count;
+                                colIdx++;
+                            });
+                            
+                            row.getCell(colIdx).value = rowTotal === 0 ? '-' : rowTotal;
+                            if (rowTotal > 0) row.getCell(colIdx).numFmt = '#,##0';
+                            row.getCell(colIdx).font = { bold: true };
+                            row.getCell(colIdx).alignment = { horizontal: 'center' };
+                            absoluteTotal += rowTotal;
+
+                            // Light grey zebra striping
+                            if (isEven) {
+                                row.eachCell({ includeEmpty: true }, (cell, cNum) => {
+                                    if (cNum <= colIdx && (!cell.fill || cell.fill.type !== 'pattern')) {
+                                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+                                    }
+                                });
+                            }
+                            isEven = !isEven;
+                            
+                            // Borders
+                            row.eachCell({ includeEmpty: true }, (cell, cNum) => {
+                                if (cNum <= colIdx) {
+                                    cell.border = {
+                                        top: {style:'thin', color:{argb:'FFCBD5E1'}}, left: {style:'thin', color:{argb:'FFCBD5E1'}},
+                                        bottom: {style:'thin', color:{argb:'FFCBD5E1'}}, right: {style:'thin', color:{argb:'FFCBD5E1'}}
+                                    };
+                                }
+                            });
+
+                            currentRow++;
+                        }
+
+                        // Grand Total Row
+                        const totalRow = summarySheet.getRow(currentRow);
+                        totalRow.getCell(1).value = 'Grand Total';
+                        colIdx = 2;
+                        sortedWHs.forEach(wh => {
+                            const tot = grandTotalsByWh[wh];
+                            totalRow.getCell(colIdx).value = tot === 0 ? '-' : tot;
+                            if (tot > 0) totalRow.getCell(colIdx).numFmt = '#,##0';
+                            colIdx++;
+                        });
+                        totalRow.getCell(colIdx).value = absoluteTotal === 0 ? '-' : absoluteTotal;
+                        if (absoluteTotal > 0) totalRow.getCell(colIdx).numFmt = '#,##0';
+                        
+                        totalRow.eachCell({ includeEmpty: true }, (cell, cNum) => {
+                            if (cNum <= colIdx) {
+                                cell.font = { bold: true };
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }; // Cool grey
+                                cell.alignment = { horizontal: cNum === 1 ? 'left' : 'center', vertical: 'middle' };
+                                cell.border = {
+                                    top: {style:'thin', color:{argb:'FF94A3B8'}}, left: {style:'thin', color:{argb:'FF94A3B8'}},
+                                    bottom: {style:'medium', color:{argb:'FF94A3B8'}}, right: {style:'thin', color:{argb:'FF94A3B8'}}
+                                };
+                            }
+                        });
+
+                        currentRow += 3; // Spacer between scopes
+                    }
+
+                    // Column Sizing
+                    summarySheet.getColumn(1).width = 50;
+                    for (let i = 2; i <= sortedWHs.length + 2; i++) {
+                        summarySheet.getColumn(i).width = 18;
+                    }
+                };
+
+                // Execute the summary sheet builder first so it forces its way to Tab 1
+                buildSummarySheet();
+                // --- END NEW SUMMARY SHEET ---
+
+                const createStyledSheet = (sheetName, dataList, baseName) => {
                     if (dataList.length === 0) return;
                     
                     const worksheet = workbook.addWorksheet(sheetName);
+                    worksheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 1, activeCell: 'D2' }];
 
-                    // Professional Feature: Freeze top row and first 3 columns
-                    worksheet.views = [
-                        { state: 'frozen', xSplit: 3, ySplit: 1, activeCell: 'D2' }
-                    ];
-
-                    // Collect all unique original column letters (A, B, C...) present across the errors
                     let originalCols = new Set();
-                    dataList.forEach(item => {
-                        Object.keys(item.rawRow).forEach(k => originalCols.add(k));
-                    });
+                    dataList.forEach(item => { Object.keys(item.rawRow).forEach(k => originalCols.add(k)); });
                     
-                    // Helper to correctly sort Excel column letters logically (A=1, B=2 ... Z=26, AA=27)
                     const colToInt = (col) => {
                         let num = 0;
-                        for (let i = 0; i < col.length; i++) {
-                            num = num * 26 + (col.charCodeAt(i) - 64);
-                        }
+                        for (let i = 0; i < col.length; i++) { num = num * 26 + (col.charCodeAt(i) - 64); }
                         return num;
                     };
                     const sortedOrigCols = Array.from(originalCols).sort((a, b) => colToInt(a) - colToInt(b));
 
-                    // 1. Define Worksheet Columns Layout
                     let sheetColumns = [
                         { header: 'Error Reason (Classification)', key: 'm_errReason', width: 55 },
                         { header: 'Source', key: 'm_source', width: 10 },
                         { header: 'Order Number', key: 'm_orderNo', width: 18 }
                     ];
 
-                    // Dynamically exclude Sub. Status column for Oracle since they don't have one
                     if (!sheetName.includes('Oracle')) {
                         sheetColumns.push({ header: 'OMS Status', key: 'm_subStatus', width: 15 });
                     }
 
                     sheetColumns.push(
-                        { header: 'TMS Status', key: 'm_tmsStatus', width: 15 },
+                        { header: `${baseName} Status`, key: 'm_tmsStatus', width: 15 },
                         { header: 'Plan Date', key: 'm_planDate', width: 15 },
                         { header: 'Invoice Number', key: 'm_invNo', width: 18 },
-                        { header: sheetName.includes('Oracle') ? 'Oracle Pallet No' : 'OMS Pallet No', key: 'm_pallet', width: 15 },
-                        { header: 'TMS Pallet No', key: 'm_tmsPallet', width: 15 },
+                        { header: `${dataList[0].meta.source} Pallet No`, key: 'm_pallet', width: 15 },
+                        { header: `${baseName} Pallet No`, key: 'm_tmsPallet', width: 15 },
                         { header: 'Diff', key: 'm_diff', width: 10 },
                         { header: '| ORIGINAL DATA |', key: 'm_sep', width: 18 }
                     );
 
-                    // Dynamically map exact original headers
                     sortedOrigCols.forEach(colLetter => {
-                        // Find the header text for this column from the first row that has it
                         let headerText = colLetter; 
                         for(let i=0; i<dataList.length; i++) {
                             if(dataList[i].headersObj[colLetter]) {
@@ -896,17 +1159,15 @@
                                 break;
                             }
                         }
-                        sheetColumns.push({ header: headerText, key: `orig_${colLetter}`, width: 15 });
+                        // Widened original data columns for better readability
+                        sheetColumns.push({ header: headerText, key: `orig_${colLetter}`, width: 22 });
                     });
 
                     worksheet.columns = sheetColumns;
 
-                    // 2. Add Rows
                     dataList.forEach(item => {
-                        
-                        // Calculate Diff strictly for numeric pallet values
                         let p1 = parseFloat(item.meta.pallet);
-                        let p2 = parseFloat(item.meta.tmsPallet);
+                        let p2 = parseFloat(item.meta.baselinePallet);
                         let diffVal = (!isNaN(p1) && !isNaN(p2)) ? (p1 - p2) : '';
 
                         let rowData = {
@@ -914,11 +1175,11 @@
                             m_source: item.meta.source,
                             m_orderNo: item.meta.orderNo,
                             m_subStatus: item.meta.subStatus,
-                            m_tmsStatus: item.meta.tmsStatus,
-                            m_planDate: item.meta.planDate,
+                            m_tmsStatus: item.meta.baselineStatus,
+                            m_planDate: normalizeDateForExcel(item.meta.planDate, item.meta.originalSource),
                             m_invNo: item.meta.invNo,
                             m_pallet: item.meta.pallet,
-                            m_tmsPallet: item.meta.tmsPallet,
+                            m_tmsPallet: item.meta.baselinePallet,
                             m_diff: diffVal,
                             m_sep: '---->'
                         };
@@ -930,49 +1191,55 @@
                         worksheet.addRow(rowData);
                     });
 
-                    // 3. Style Formatting
                     const headerRow = worksheet.getRow(1);
                     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
-                    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }; // Dark slate for pro look
+                    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } }; 
                     headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
                     headerRow.height = 30;
 
                     worksheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheetColumns.length } };
 
-                    // Style Original Data Separator Header specifically
                     let sepHeaderCell = headerRow.getCell('m_sep');
-                    sepHeaderCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } }; // Darker slate
-                    sepHeaderCell.font = { bold: true, color: { argb: 'FF38BDF8' } }; // Light blue text
+                    sepHeaderCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } }; 
+                    sepHeaderCell.font = { bold: true, color: { argb: 'FF38BDF8' } }; 
 
                     worksheet.eachRow((row, rowNumber) => {
                         if (rowNumber === 1) return; 
 
-                        // Find "Error Reason" Column
                         const reasonCell = row.getCell('m_errReason');
                         const reasonText = reasonCell.value || "";
-                        let bgColor = 'FFFFE4E6'; // Light red
-                        let fontColor = 'FFE11D48'; // Dark red
+                        let bgColor = 'FFFFE4E6'; 
+                        let fontColor = 'FFE11D48'; 
 
                         if (reasonText.includes('Mismatch')) {
-                            bgColor = 'FFFFFEBB'; // Light yellow
-                            fontColor = 'FF92400E'; // Dark amber
+                            bgColor = 'FFFFFEBB'; 
+                            fontColor = 'FF92400E'; 
                         } else if (reasonText.includes('Found in TMS')) {
-                            bgColor = 'FFE0E7FF'; // Light Indigo
-                            fontColor = 'FF3730A3'; // Dark Indigo
+                            bgColor = 'FFE0E7FF'; 
+                            fontColor = 'FF3730A3'; 
                         }
 
                         reasonCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
                         reasonCell.font = { color: { argb: fontColor }, bold: true };
-                        reasonCell.alignment = { wrapText: true, vertical: 'middle' }; // Wrap long reasons
+                        reasonCell.alignment = { wrapText: true, vertical: 'middle' }; 
 
                         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                            // Apply Date Formatting Globally
-                            if (cell.value instanceof Date && !isNaN(cell.value)) {
-                                cell.numFmt = 'd-mmm-yyyy'; // Strictly Date, no time
+                            let headerText = worksheet.getColumn(colNumber).header || "";
+                            let hLower = String(headerText).toLowerCase();
+                            
+                            // Force 'General' format for specific columns requested by user
+                            let isForcedGeneral = hLower.includes('driver id') || hLower.includes('dock no') || hLower.includes('customer no');
+
+                            if (isForcedGeneral) {
+                                cell.numFmt = 'General';
+                            } else if (cell.value instanceof Date && !isNaN(cell.value)) {
+                                cell.numFmt = 'd-mmm-yyyy'; 
+                            } else if (typeof cell.value === 'number' && cell.value > 9999999) {
+                                // Formatting fix: Prevent large IDs (Order/Invoice numbers) from converting to Scientific Notation in Excel
+                                cell.numFmt = '0';
                             }
                             
-                            // Alternate row shading for better readability (Professional touch)
-                            if (colNumber > 1) { // Skip coloring over the error reason
+                            if (colNumber > 1) { 
                                 if (rowNumber % 2 === 0) {
                                     if (!cell.fill || cell.fill.type !== 'pattern') {
                                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
@@ -987,38 +1254,34 @@
                                 right: {style:'thin', color: {argb:'FFCBD5E1'}}
                             };
                             
-                            // Align text nicely
                             if (colNumber !== 1) { 
                                 cell.alignment = { vertical: 'middle', horizontal: 'left' };
                             }
                         });
                         
-                        // Style separator cell
                         let sepCell = row.getCell('m_sep');
                         sepCell.font = { color: { argb: 'FF94A3B8' }, bold: true };
                         sepCell.alignment = { horizontal: 'center', vertical: 'middle' };
                     });
                 };
 
-                // Dynamically group errors into distinct sheets based on error type and source
                 const sheetGroups = {};
                 
                 AppState.results.allErrors.forEach(item => {
                     const reason = item.meta.errReason;
-                    const scope = item.meta.source; // 'Oracle' or 'OMS'
+                    const scope = item.meta.source; 
+                    const base = item.meta.baseName;
                     let sheetName = "";
                     
-                    if (reason.includes('Missing in TMS')) {
-                        sheetName = `${scope} - Missing in TMS`;
+                    if (reason.includes(`Missing in ${base}`)) {
+                        sheetName = `${scope} - Missing in ${base}`;
                     } else if (reason.includes(`Missing in ${scope}`)) {
-                        sheetName = `TMS - Missing in ${scope}`;
+                        sheetName = `${base} - Missing in ${scope}`;
                     } else {
-                        // Extract the specific mismatch type (e.g., "Pallets", "Plan Date")
                         let mismatchType = reason.split(' Mismatch')[0].trim();
-                        sheetName = `${scope} - ${mismatchType} Mismatch`;
+                        sheetName = `${scope} v ${base} - ${mismatchType}`;
                     }
                     
-                    // Excel limits sheet names to 31 chars and forbids certain characters
                     sheetName = sheetName.substring(0, 31).replace(/[\\/?*\[\]]/g, '');
                     
                     if (!sheetGroups[sheetName]) {
@@ -1027,37 +1290,34 @@
                     sheetGroups[sheetName].push(item);
                 });
 
-                // --- EXTRA ORDER COUNT SUMMARY SHEETS ---
                 const scopeSelection = document.querySelector('input[name="scope"]:checked').value;
                 let omsCountBuilt = false;
                 let oracleCountBuilt = false;
-
-                const buildCountSheet = (sheetTitle, subSourceName) => {
+                const buildCountSheet = (sheetTitle, subSourceName, baseName = 'TMS') => {
                     const subKey = subSourceName.toLowerCase();
+                    const baseKey = baseName.toLowerCase();
                     const subData = AppState.filesData[subKey].rows;
-                    const tmsData = AppState.filesData.tms.rows;
+                    const baseData = AppState.filesData[baseKey].rows;
                     const subCols = AppState.cols[subKey];
-                    const tmsCols = AppState.cols.tms;
+                    const baseCols = AppState.cols[baseKey];
 
-                    if (!subData || subData.length === 0) return;
+                    if (!subData || subData.length === 0 || !baseData || baseData.length === 0) return;
 
                     const countSheet = workbook.addWorksheet(sheetTitle);
                     countSheet.columns = [
                         { header: 'Warehouse', key: 'warehouse', width: 15 },
                         { header: 'Order Number', key: 'order', width: 20 },
                         { header: 'Invoice Number', key: 'invoice', width: 20 },
-                        { header: 'Count of Order no in TMS', key: 'tmsCount', width: 25 },
-                        { header: `Count of Order no in ${subSourceName}`, key: 'subCount', width: 25 },
+                        { header: `Count in ${baseName}`, key: 'tmsCount', width: 25 },
+                        { header: `Count in ${subSourceName}`, key: 'subCount', width: 25 },
                         { header: 'Diff', key: 'diff', width: 10 }
                     ];
 
-                    // Safely identify the correct Warehouse column
-                    const findWhCol = (hdrs, isTms) => {
+                    const findWhCol = (hdrs, isBase) => {
                         for (const [k, v] of Object.entries(hdrs)) {
                             if (!v) continue;
                             let val = String(v).toLowerCase();
-                            if (isTms) {
-                                // Strictly target Current Branch for TMS
+                            if (isBase && baseName === 'TMS') {
                                 if (val.includes('current branch')) return k;
                             } else {
                                 if (val.includes('warehouse') || val.includes('site') || val.includes('facility')) return k;
@@ -1067,11 +1327,10 @@
                     };
 
                     const subWhCol = findWhCol(AppState.filesData[subKey].headers, false);
-                    const tmsWhCol = findWhCol(AppState.filesData.tms.headers, true);
+                    const baseWhCol = findWhCol(AppState.filesData[baseKey].headers, true);
 
                     let orderMap = {};
 
-                    // Count in Subsidiary
                     subData.forEach(row => {
                         let rawOrder = row[subCols.order];
                         let orderKey = normStr(rawOrder);
@@ -1088,17 +1347,16 @@
                         orderMap[orderKey].subCount++;
                     });
 
-                    // Count in TMS
-                    tmsData.forEach(row => {
-                        let rawOrder = row[tmsCols.order];
+                    baseData.forEach(row => {
+                        let rawOrder = row[baseCols.order];
                         let orderKey = normStr(rawOrder);
                         if (!orderKey) return;
                         
                         if (!orderMap[orderKey]) {
                             orderMap[orderKey] = {
-                                warehouse: tmsWhCol ? row[tmsWhCol] : '',
+                                warehouse: baseWhCol ? row[baseWhCol] : '',
                                 order: rawOrder,
-                                invoice: row[tmsCols.invoice] || '',
+                                invoice: row[baseCols.invoice] || '',
                                 subCount: 0,
                                 tmsCount: 0
                             };
@@ -1106,7 +1364,6 @@
                         orderMap[orderKey].tmsCount++;
                     });
 
-                    // Add rows to sheet
                     Object.values(orderMap).forEach(data => {
                         let diffCalc = data.tmsCount - data.subCount;
                         let r = countSheet.addRow({
@@ -1118,7 +1375,6 @@
                             diff: diffCalc
                         });
 
-                        // Apply red highlight for discrepancies, green for matched counts
                         if (diffCalc !== 0) {
                             r.getCell('diff').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
                             r.getCell('diff').font = { color: { argb: 'FF9C0006' } };
@@ -1133,36 +1389,41 @@
                     countSheet.views = [{ state: 'frozen', ySplit: 1 }];
                 };
 
-                // Create a styled sheet for each dynamically generated group
-                // Sort sheet names so they are grouped by Source sequentially
                 const sortedSheetNames = Object.keys(sheetGroups).sort();
                 
                 for (const sheetName of sortedSheetNames) {
-                    createStyledSheet(sheetName, sheetGroups[sheetName]);
+                    let baseN = sheetGroups[sheetName][0].meta.baseName;
+                    createStyledSheet(sheetName, sheetGroups[sheetName], baseN);
                     
-                    // Inject the OMS Count Summary right after the "Missing in TMS" sheet (if it exists)
                     if (sheetName === 'OMS - Missing in TMS') {
                         if (scopeSelection === 'oms' || scopeSelection === 'both') {
-                            buildCountSheet('OMS Count Summary', 'OMS');
+                            buildCountSheet('OMS Count Summary', 'OMS', 'TMS');
                             omsCountBuilt = true;
                         }
                     }
                     
-                    // Inject the Oracle Count Summary right after its respective "Missing in TMS" sheet
                     if (sheetName === 'Oracle - Missing in TMS') {
                         if (scopeSelection === 'oracle' || scopeSelection === 'both') {
-                            buildCountSheet('Oracle Count Summary', 'Oracle');
+                            buildCountSheet('Oracle Count Summary', 'Oracle', 'TMS');
                             oracleCountBuilt = true;
+                        }
+                    }
+                    
+                    if (sheetName === 'Oracle - Missing in OMS') {
+                        if (scopeSelection === 'oracle_oms') {
+                            buildCountSheet('Oracle vs OMS Count', 'Oracle', 'OMS');
                         }
                     }
                 }
 
-                // Catch-all: If those specific error sheets didn't exist, ensure the summaries still get built at the end
                 if ((scopeSelection === 'oms' || scopeSelection === 'both') && !omsCountBuilt) {
-                    buildCountSheet('OMS Count Summary', 'OMS');
+                    buildCountSheet('OMS Count Summary', 'OMS', 'TMS');
                 }
                 if ((scopeSelection === 'oracle' || scopeSelection === 'both') && !oracleCountBuilt) {
-                    buildCountSheet('Oracle Count Summary', 'Oracle');
+                    buildCountSheet('Oracle Count Summary', 'Oracle', 'TMS');
+                }
+                if (scopeSelection === 'oracle_oms' && !sheetGroups['Oracle - Missing in OMS']) {
+                    buildCountSheet('Oracle vs OMS Count', 'Oracle', 'OMS');
                 }
 
                 const buffer = await workbook.xlsx.writeBuffer();
