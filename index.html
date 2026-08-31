@@ -378,6 +378,16 @@
             return k.toString().toLowerCase().trim().replace(/[^a-z0-9]/g, '');
         }
 
+        // Normalize order specifically (strips OMS suffix -1, -2, etc. at the end)
+        function normOrder(k, sourceName = '') {
+            if (k === null || k === undefined) return '';
+            let str = k.toString().trim();
+            if (sourceName === 'OMS') {
+                str = str.replace(/-\d+$/, '');
+            }
+            return normStr(str);
+        }
+
         // Helper to check and format field mismatches
         function checkMismatch(fieldName, sVal, tVal, type = 'string', sourceName = 'Oracle', baseName = 'TMS') {
             let sNorm, tNorm, sDisp, tDisp;
@@ -614,8 +624,8 @@
             let cSub = AppState.cols[sourceName.toLowerCase()];
             let cBase = AppState.cols[baseName.toLowerCase()];
 
-            let subGroups = groupBy(subData, row => normStr(row[cSub.order]));
-            let baseGroups = groupBy(baseData, row => normStr(row[cBase.order]));
+            let subGroups = groupBy(subData, row => normOrder(row[cSub.order], sourceName));
+            let baseGroups = groupBy(baseData, row => normOrder(row[cBase.order], baseName));
 
             const compScope = `${sourceName}_${baseName}`;
 
@@ -1333,7 +1343,7 @@
 
                     subData.forEach(row => {
                         let rawOrder = row[subCols.order];
-                        let orderKey = normStr(rawOrder);
+                        let orderKey = normOrder(rawOrder, subSourceName);
                         if (!orderKey) return;
                         if (!orderMap[orderKey]) {
                             orderMap[orderKey] = {
@@ -1349,7 +1359,7 @@
 
                     baseData.forEach(row => {
                         let rawOrder = row[baseCols.order];
-                        let orderKey = normStr(rawOrder);
+                        let orderKey = normOrder(rawOrder, baseName);
                         if (!orderKey) return;
                         
                         if (!orderMap[orderKey]) {
