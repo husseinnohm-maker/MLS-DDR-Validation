@@ -265,7 +265,7 @@
             },
             cols: {
                 tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'M', pallet: 'Z', invStatus: 'AA', podStatus: 'AD', subdiv: null },
-                oms: { planDate: 'A', status: 'F', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
+                oms: { planDate: 'A', status: 'F', dispatchDate: 'G', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
                 oracle: { planDate: 'A', invoice: 'I', order: 'K', pallet: 'Y', invStatus: 'AA', podStatus: 'AD', div: null, subdiv: null }
             },
             results: {
@@ -700,11 +700,22 @@
                         errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in ${baseName})`, null, bRow, orderKey, baseName));
                     } else if (sRow && bRow) {
                         
-                        // 1. Plan Date Check
-                        if (sourceName !== 'OMS') {
-                            let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], bRow[cBase.planDate], 'date', sourceName, baseName);
-                            if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, bRow, orderKey, baseName));
+                        // 1. Plan Date / Dispatch Date Check
+                        let checkFieldName = 'Plan Date';
+                        let subDateVal = sRow[cSub.planDate];
+                        let baseDateVal = bRow[cBase.planDate];
+
+                        if (sourceName === 'OMS') {
+                            subDateVal = sRow[cSub.dispatchDate];
+                            checkFieldName = 'Dispatch Date';
                         }
+                        if (baseName === 'OMS') {
+                            baseDateVal = bRow[cBase.dispatchDate];
+                            checkFieldName = 'Dispatch Date';
+                        }
+
+                        let pdErr = checkMismatch(checkFieldName, subDateVal, baseDateVal, 'date', sourceName, baseName);
+                        if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, bRow, orderKey, baseName));
                         
                         // 2. Invoice Number Check
                         let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], bRow[cBase.invoice], 'string', sourceName, baseName);
