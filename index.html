@@ -265,7 +265,7 @@
             },
             cols: {
                 tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'M', pallet: 'Z', invStatus: 'AA', podStatus: 'AD', subdiv: null },
-                oms: { planDate: 'A', status: 'F', dispatchDate: 'G', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
+                oms: { planDate: 'A', status: 'F', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
                 oracle: { planDate: 'A', invoice: 'I', order: 'K', pallet: 'Y', invStatus: 'AA', podStatus: 'AD', div: null, subdiv: null }
             },
             results: {
@@ -700,22 +700,11 @@
                         errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in ${baseName})`, null, bRow, orderKey, baseName));
                     } else if (sRow && bRow) {
                         
-                        // 1. Plan Date / Dispatch Date Check
-                        let checkFieldName = 'Plan Date';
-                        let subDateVal = sRow[cSub.planDate];
-                        let baseDateVal = bRow[cBase.planDate];
-
-                        if (sourceName === 'OMS') {
-                            subDateVal = sRow[cSub.dispatchDate];
-                            checkFieldName = 'Dispatch Date';
+                        // 1. Plan Date Check
+                        if (sourceName !== 'OMS') {
+                            let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], bRow[cBase.planDate], 'date', sourceName, baseName);
+                            if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, bRow, orderKey, baseName));
                         }
-                        if (baseName === 'OMS') {
-                            baseDateVal = bRow[cBase.dispatchDate];
-                            checkFieldName = 'Dispatch Date';
-                        }
-
-                        let pdErr = checkMismatch(checkFieldName, subDateVal, baseDateVal, 'date', sourceName, baseName);
-                        if (pdErr) errors.push(createErrorObj(sourceName, pdErr, sRow, bRow, orderKey, baseName));
                         
                         // 2. Invoice Number Check
                         let invErr = checkMismatch('Invoice No', sRow[cSub.invoice], bRow[cBase.invoice], 'string', sourceName, baseName);
@@ -1314,6 +1303,7 @@
                 const scopeSelection = document.querySelector('input[name="scope"]:checked').value;
                 let omsCountBuilt = false;
                 let oracleCountBuilt = false;
+                
                 const buildCountSheet = (sheetTitle, subSourceName, baseName = 'TMS') => {
                     const subKey = subSourceName.toLowerCase();
                     const baseKey = baseName.toLowerCase();
@@ -1446,6 +1436,119 @@
                 if (scopeSelection === 'oracle_oms' && !sheetGroups['Oracle - Missing in OMS']) {
                     buildCountSheet('Oracle vs OMS Count', 'Oracle', 'OMS');
                 }
+
+                // --- NEW DATE VALIDATION SHEETS ---
+                const buildDateValidationSheets = () => {
+                    
+                    // Restored Date Formatter with the +1 day TMS override and pristine OMS capture
+                    const formatRawDateString = (val, sourceName) => {
+                        if (val === null || val === undefined || val === '') return 'Empty';
+                        
+                        // Pass empty string to bypass the global Oracle/OMS +1 day shift
+                        let d = parseDateSafely(val, ''); 
+                        
+                        if (d instanceof Date && !isNaN(d)) {
+                            if (sourceName === 'TMS') {
+                                d.setDate(d.getDate() + 1); // Explicit +1 day override for TMS
+                            }
+                            const day = d.getDate();
+                            const m = d.toLocaleString('default', { month: 'short' });
+                            const y = d.getFullYear();
+                            return `${day}-${m}-${y}`;
+                        }
+                        return String(val).trim();
+                    };
+
+                    const buildSheet = (sheetName, omsData, otherData, otherSource, otherCols) => {
+                        if (!omsData.rows.length || !otherData.rows.length) return;
+
+                        const sheet = workbook.addWorksheet(sheetName);
+                        sheet.columns = [
+                            { header: 'Order Number', key: 'order', width: 20 },
+                            { header: 'Warehouse', key: 'wh', width: 15 },
+                            { header: 'OMS Dispatch Date', key: 'omsDate', width: 22 },
+                            { header: `${otherSource} Plan Date`, key: 'otherDate', width: 22 },
+                            { header: 'Status', key: 'status', width: 20 }
+                        ];
+
+                        // Safely locate the Warehouse columns
+                        const getWhCol = (headers, isTMS) => {
+                            for (const [k, v] of Object.entries(headers)) {
+                                if (!v) continue;
+                                let val = String(v).toLowerCase();
+                                if (isTMS && val.includes('current branch')) return k;
+                                if (!isTMS && (val.includes('warehouse') || val.includes('site') || val.includes('branch'))) return k;
+                            }
+                            return null;
+                        };
+
+                        const omsWhCol = getWhCol(omsData.headers, false);
+                        const otherWhCol = getWhCol(otherData.headers, otherSource === 'TMS');
+                        const omsDispatchCol = 'G'; 
+
+                        let omsGroups = groupBy(omsData.rows, r => normOrder(r[AppState.cols.oms.order], 'OMS'));
+                        let otherGroups = groupBy(otherData.rows, r => normOrder(r[otherCols.order], otherSource));
+
+                        for (let orderKey in omsGroups) {
+                            let oList = omsGroups[orderKey];
+                            let tList = otherGroups[orderKey] || [];
+
+                            // --- NEW LOGIC: Sub-group by Warehouse ---
+                            let oWhGroups = groupBy(oList, r => normStr(omsWhCol ? r[omsWhCol] : ''));
+                            let tWhGroups = groupBy(tList, r => normStr(otherWhCol ? r[otherWhCol] : ''));
+
+                            // Loop through each warehouse found in OMS for this order
+                            for (let whKey in oWhGroups) {
+                                let oLines = oWhGroups[whKey];
+                                let tLines = tWhGroups[whKey] || [];
+
+                                // Sort chronologically to align multiple identical transactions inside the same warehouse
+                                oLines.sort((a, b) => multiSort(a, b, AppState.cols.oms, ''));
+                                tLines.sort((a, b) => multiSort(a, b, otherCols, otherSource === 'TMS' ? '' : otherSource));
+
+                                let maxLen = Math.max(oLines.length, tLines.length);
+
+                                for (let i = 0; i < maxLen; i++) {
+                                    let oRow = oLines[i];
+                                    let tRow = tLines[i];
+
+                                    // Only flag a date mismatch if both transactions exist
+                                    if (oRow && tRow) {
+                                        let omsRawDate = formatRawDateString(oRow[omsDispatchCol], '');
+                                        let otherRawDate = formatRawDateString(tRow[otherCols.planDate], otherSource);
+
+                                        if (omsRawDate !== otherRawDate && !(omsRawDate === 'Empty' && otherRawDate === 'Empty')) {
+                                            let row = sheet.addRow({
+                                                order: oRow[AppState.cols.oms.order],
+                                                wh: omsWhCol ? oRow[omsWhCol] : 'Unknown',
+                                                omsDate: omsRawDate,
+                                                otherDate: otherRawDate,
+                                                status: 'Date Mismatch'
+                                            });
+                                            row.getCell('order').numFmt = '0';
+                                            row.getCell('status').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+                                            row.getCell('status').font = { color: { argb: 'FF9C0006' } };
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                        sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+                    };
+
+                    if (scopeSelection === 'oms' || scopeSelection === 'both') {
+                        buildSheet('OMS-TMS Date Val', AppState.filesData.oms, AppState.filesData.tms, 'TMS', AppState.cols.tms);
+                    }
+                    if (scopeSelection === 'oracle_oms' || scopeSelection === 'both') {
+                        buildSheet('OMS-Oracle Date Val', AppState.filesData.oms, AppState.filesData.oracle, 'Oracle', AppState.cols.oracle);
+                    }
+                };
+
+                // Run the date validation sheets builder before finalizing the export
+                buildDateValidationSheets();
+                // --- END NEW DATE VALIDATION SHEETS ---
 
                 const buffer = await workbook.xlsx.writeBuffer();
                 const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
