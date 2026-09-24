@@ -674,11 +674,40 @@
                 return v;
             };
 
+            let matchedBaseKeys = new Set();
+
             for (let orderKey in subGroups) {
                 if (!orderKey) continue;
 
                 let sList = subGroups[orderKey];
                 let bList = baseGroups[orderKey] || [];
+                let isFallback = false;
+
+                // --- NEW: Cross-Column Fallback Matching (Order No swapped with Invoice No) ---
+                if (bList.length === 0) {
+                    // 1. Try matching Sub Order No to Base Invoice No
+                    let matchingBaseRows = baseData.filter(r => normStr(r[cBase.invoice]) === orderKey);
+                    if (matchingBaseRows.length > 0) {
+                        bList = matchingBaseRows;
+                        isFallback = true;
+                    } else {
+                        // 2. Try matching Sub Invoice No to Base Order No
+                        let subInv = normStr(sList[0][cSub.invoice]);
+                        if (subInv && baseGroups[subInv]) {
+                            bList = baseGroups[subInv];
+                            isFallback = true;
+                        }
+                    }
+                }
+
+                if (bList.length > 0) {
+                    if (!isFallback) {
+                        matchedBaseKeys.add(orderKey);
+                    } else {
+                        // Keep track of the actual base order keys we consumed so they don't show as missing later
+                        bList.forEach(r => matchedBaseKeys.add(normOrder(r[cBase.order], baseName)));
+                    }
+                }
 
                 // Strictly sort chronologically first (by Date -> Inv -> Pallets) to align identical transactions
                 sList.sort((a, b) => multiSort(a, b, cSub, sourceName));
@@ -700,6 +729,14 @@
                         errors.push(createErrorObj(sourceName, `Missing in ${sourceName} (Extra count in ${baseName})`, null, bRow, orderKey, baseName));
                     } else if (sRow && bRow) {
                         
+                        // --- NEW: Flag Order Number Mismatch if matched via fallback ---
+                        if (isFallback) {
+                            let sOrdDisp = sRow[cSub.order] || 'Empty';
+                            let bOrdDisp = bRow[cBase.order] || 'Empty';
+                            let ordErr = `Order Number Mismatch (${sourceName}: ${sOrdDisp} vs ${baseName}: ${bOrdDisp})`;
+                            errors.push(createErrorObj(sourceName, ordErr, sRow, bRow, orderKey, baseName));
+                        }
+
                         // 1. Plan Date Check
                         if (sourceName !== 'OMS') {
                             let pdErr = checkMismatch('Plan Date', sRow[cSub.planDate], bRow[cBase.planDate], 'date', sourceName, baseName);
@@ -793,7 +830,7 @@
             }
 
             for (let orderKey in baseGroups) {
-                if (subGroups[orderKey]) continue; 
+                if (subGroups[orderKey] || matchedBaseKeys.has(orderKey)) continue; 
 
                 let bList = baseGroups[orderKey];
                 for (let i = 0; i < bList.length; i++) {
