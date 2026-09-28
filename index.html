@@ -264,7 +264,9 @@
                 oms: { headers: {}, rows: [] }
             },
             cols: {
-                tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'M', pallet: 'Z', invStatus: 'AA', podStatus: 'AD', subdiv: null },
+                // FIXED: Adjusted to precisely match the new TMS column sequence. 
+                // Order from M -> N. Pallet from Z -> AB. InvStatus AA -> AC. PodStatus AD -> AF.
+                tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'N', pallet: 'AB', invStatus: 'AC', podStatus: 'AF', subdiv: null },
                 oms: { planDate: 'A', status: 'F', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
                 oracle: { planDate: 'A', invoice: 'I', order: 'K', pallet: 'Y', invStatus: 'AA', podStatus: 'AD', div: null, subdiv: null }
             },
