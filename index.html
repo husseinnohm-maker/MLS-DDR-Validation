@@ -265,8 +265,8 @@
             },
             cols: {
                 // FIXED: Adjusted to precisely match the new TMS column sequence. 
-                // Order from M -> N. Pallet from Z -> AB. InvStatus AA -> AC. PodStatus AD -> AF.
-                tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'N', pallet: 'AB', invStatus: 'AC', podStatus: 'AF', subdiv: null },
+                // Order is at N. Zone shifted to AP, causing Pallet and later columns to shift left by 1.
+                tms: { planDate: 'A', status: 'D', invoice: 'K', order: 'N', pallet: 'AA', invStatus: 'AB', podStatus: 'AE', subdiv: null },
                 oms: { planDate: 'A', status: 'F', invoice: 'N', order: 'P', pallet: 'V', invStatus: 'W', podStatus: 'Z' },
                 oracle: { planDate: 'A', invoice: 'I', order: 'K', pallet: 'Y', invStatus: 'AA', podStatus: 'AD', div: null, subdiv: null }
             },
